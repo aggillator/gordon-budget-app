@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ledger — Budget Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Household ledger</p>
+      <h1 id="monthLabel">Loading…</h1>
+    </div>
+    <div class="masthead-actions">
+      <select id="monthPicker"></select>
+      <button id="syncBtn" class="btn btn-quiet">Sync transactions</button>
+      <button id="connectBtn" class="btn btn-primary">Connect a bank</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary" id="summarySection">
+      <h2>Budget vs. actual</h2>
+      <div id="summaryList" class="ledger-rows"></div>
+    </section>
+
+    <section class="transactions">
+      <h2>Transactions</h2>
+      <div id="txnList" class="ledger-rows"></div>
+    </section>
+  </main>
+
+  <div id="statusBar" class="status-bar" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
