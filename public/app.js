@@ -125,15 +125,32 @@ async function refresh() {
 
 monthPicker.addEventListener("change", refresh);
 
-document.getElementById("syncBtn").addEventListener("click", async () => {
-  showStatus("Syncing with your bank…", 60000);
-  try {
+async function runFullSync() {
+  let totalAdded = 0,
+    totalModified = 0,
+    hasMore = true,
+    rounds = 0;
+
+  while (hasMore && rounds < 30) {
+    rounds++;
+    showStatus(`Syncing… (${totalAdded} transactions so far)`, 60000);
     const res = await fetch("/api/sync-transactions", { method: "POST" });
     const data = await res.json();
-    showStatus(`Synced — ${data.added} new, ${data.modified} updated`);
+    if (!res.ok) throw new Error(data.error || "Sync failed");
+    totalAdded += data.added;
+    totalModified += data.modified;
+    hasMore = data.hasMore;
+  }
+  return { totalAdded, totalModified };
+}
+
+document.getElementById("syncBtn").addEventListener("click", async () => {
+  try {
+    const { totalAdded, totalModified } = await runFullSync();
+    showStatus(`Synced — ${totalAdded} new, ${totalModified} updated`);
     refresh();
   } catch (err) {
-    showStatus("Sync failed — check Cloudflare Function logs");
+    showStatus(`Sync failed: ${err.message}`, 6000);
   }
 });
 
@@ -150,9 +167,8 @@ document.getElementById("connectBtn").addEventListener("click", async () => {
         body: JSON.stringify({ public_token }),
       });
       showStatus("Bank connected — syncing now…", 60000);
-      const syncRes = await fetch("/api/sync-transactions", { method: "POST" });
-      const data = await syncRes.json();
-      showStatus(`Connected — pulled ${data.added} transactions`);
+      const { totalAdded } = await runFullSync();
+      showStatus(`Connected — pulled ${totalAdded} transactions`);
       refresh();
     },
   });
