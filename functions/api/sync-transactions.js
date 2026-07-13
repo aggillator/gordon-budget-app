@@ -23,7 +23,7 @@ export async function onRequestPost({ env }) {
         const account = accounts.find((a) => a.plaid_account_id === t.account_id);
         if (!account) continue;
         const category_id = suggestCategory(rules, t);
-        await sb(env, "transactions", {
+        await sb(env, "transactions?on_conflict=plaid_transaction_id", {
           method: "POST",
           prefer: "resolution=merge-duplicates",
           body: {
