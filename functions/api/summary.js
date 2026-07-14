@@ -8,7 +8,7 @@ export async function onRequestGet({ request, env }) {
 
   const categories = await sb(
     env,
-    "categories?select=*&exclude_from_budget=eq.false&order=sort_order.asc"
+    "categories?select=*&exclude_from_budget=eq.false&order=name.asc"
   );
   const txns = await sb(
     env,
