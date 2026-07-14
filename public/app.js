@@ -42,9 +42,6 @@ function escapeAttr(s) {
     .replace(/>/g, "&gt;");
 }
 
-// Plaid's raw convention is the opposite of how people read a statement:
-// positive = money out, negative = money in. This flips it for display only
-// - debits show "-", deposits show "+" - the underlying data/math is untouched.
 function fmtTxnAmount(amount) {
   const isDeposit = amount < 0;
   const abs = Math.abs(amount);
@@ -64,7 +61,7 @@ function monthName(m) {
 
 async function populateMonthPicker() {
   const now = new Date();
-  let monthsBack = 6; // fallback if there's no data yet
+  let monthsBack = 6;
 
   try {
     const res = await fetch("/api/date-range");
@@ -73,7 +70,7 @@ async function populateMonthPicker() {
       const [ey, em] = earliest.split("-").map(Number);
       monthsBack =
         (now.getUTCFullYear() - ey) * 12 + (now.getUTCMonth() + 1 - em) + 1;
-      monthsBack = Math.max(1, Math.min(monthsBack, 36)); // sane cap either direction
+      monthsBack = Math.max(1, Math.min(monthsBack, 36));
     }
   } catch {
     // fall back to 6 months if this fails for any reason
@@ -399,8 +396,6 @@ document.getElementById("matchAmazonBtn").addEventListener("click", async () => 
     return;
   }
 
-  // Sent in small batches - the endpoint fetches candidate transactions once
-  // per call, so keeping batches modest avoids Cloudflare's subrequest cap.
   const CHUNK = 30;
   let totalMatched = 0;
 
@@ -539,9 +534,6 @@ async function loadCategories() {
   renderCategoryManage();
 }
 
-// Creates a category via the API and returns its id. Used by both the
-// bottom "Manage categories" form and the inline quick-add in each
-// transaction row, so both stay in sync with the same logic.
 async function createCategory({ name, monthly_budget = 0, exclude_from_budget = false }) {
   const res = await fetch("/api/categories", {
     method: "POST",
@@ -568,8 +560,6 @@ async function setTransactionCategory(txnId, categoryId) {
   refresh();
 }
 
-// Builds the query params shared by both the on-screen transaction list and
-// the PDF export, so what you see is what you get.
 function buildTransactionParams(month) {
   const params = new URLSearchParams();
   const search = searchBox.value.trim();
@@ -589,10 +579,6 @@ function buildTransactionParams(month) {
   return params;
 }
 
-// Type (deposit/withdrawal) and min/max amount are applied client-side after
-// fetch rather than in SQL - Plaid stores withdrawals positive and deposits
-// negative, so a clean "amount over $X regardless of direction" filter is
-// simpler and more robust done here than as a sign-aware Postgres query.
 function applyClientFilters(rows) {
   const type = filterType.value;
   const min = parseFloat(filterMinAmount.value);
@@ -761,7 +747,7 @@ document.getElementById("addCategoryForm").addEventListener("submit", async (e) 
   document.getElementById("newCatBudget").value = "";
   document.getElementById("newCatExclude").checked = false;
   showStatus(`Added category "${name}"`);
-  refresh(); // repopulates every dropdown already on screen, not just the manage panel
+  refresh();
 });
 
 async function runFullSync() {
@@ -873,8 +859,6 @@ async function exportPdf() {
   if (filterCat) subtitle += ` - ${filterCat.name} only`;
   doc.text(subtitle, 14, 25);
 
-  // Budget vs. actual (always reflects the selected month, regardless of
-  // any other filter applied to the transaction list below)
   const summaryRes = await fetch(`/api/summary?month=${month}`);
   const { summary } = await summaryRes.json();
   doc.autoTable({
@@ -894,8 +878,6 @@ async function exportPdf() {
     styles: { fontSize: 9 },
   });
 
-  // Transaction list - respects every active filter (search, category,
-  // date range, account, type, amount range)
   const txns = await fetchFilteredTransactions(month);
 
   doc.autoTable({
@@ -925,3 +907,105 @@ async function exportPdf() {
 document.getElementById("exportPdfBtn").addEventListener("click", () => {
   exportPdf().catch((err) => showStatus(`Export failed: ${err.message}`, 6000));
 });
+
+// ---------- CSV Import (bank/credit card statements) ----------
+
+const csvAccountSelect = document.getElementById("csvAccountSelect");
+const csvFileInput = document.getElementById("csvFileInput");
+const csvMappingArea = document.getElementById("csvMappingArea");
+const csvDateCol = document.getElementById("csvDateCol");
+const csvDescCol = document.getElementById("csvDescCol");
+const csvAmountCol = document.getElementById("csvAmountCol");
+const csvFlipSign = document.getElementById("csvFlipSign");
+const csvImportBtn = document.getElementById("csvImportBtn");
+
+let csvRows = [];
+let csvHeaders = [];
+
+if (csvFileInput) {
+  csvFileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        csvRows = results.data;
+        csvHeaders = results.meta.fields || [];
+        populateCsvMapping();
+      },
+      error: (err) => showStatus(`Couldn't read CSV: ${err.message}`, 6000),
+    });
+  });
+}
+
+function populateCsvMapping() {
+  const dateGuess = guessColumn(csvHeaders, ["date", "transactiondate", "postingdate"]);
+  const descGuess = guessColumn(csvHeaders, ["description", "name", "merchant", "payee"]);
+  const amountGuess = guessColumn(csvHeaders, ["amount", "debit", "total"]);
+
+  const opts = (selected) =>
+    `<option value="">-- none --</option>` +
+    csvHeaders
+      .map((h) => `<option value="${escapeAttr(h)}" ${h === selected ? "selected" : ""}>${escapeAttr(h)}</option>`)
+      .join("");
+
+  csvDateCol.innerHTML = opts(dateGuess);
+  csvDescCol.innerHTML = opts(descGuess);
+  csvAmountCol.innerHTML = opts(amountGuess);
+  csvAccountSelect.innerHTML = accounts
+    .map((a) => `<option value="${a.id}">${a.name}${a.mask ? ` (...${a.mask})` : ""}</option>`)
+    .join("");
+  csvMappingArea.hidden = false;
+}
+
+if (csvImportBtn) {
+  csvImportBtn.addEventListener("click", async () => {
+    const dateCol = csvDateCol.value;
+    const descCol = csvDescCol.value;
+    const amountCol = csvAmountCol.value;
+    const accountId = csvAccountSelect.value;
+    const flip = csvFlipSign.checked;
+
+    if (!dateCol || !descCol || !amountCol) {
+      showStatus("Please map date, description, and amount columns", 5000);
+      return;
+    }
+    if (!accountId) {
+      showStatus("Please choose an account first", 5000);
+      return;
+    }
+
+    const rows = csvRows
+      .map((row) => {
+        const d = new Date(row[dateCol]);
+        if (isNaN(d)) return null;
+        const date = d.toISOString().slice(0, 10);
+        let amount = parseFloat(String(row[amountCol]).replace(/[^0-9.-]/g, "")) || 0;
+        if (flip) amount = -amount;
+        return { date, name: row[descCol], amount };
+      })
+      .filter(Boolean);
+
+    if (!rows.length) {
+      showStatus("No valid rows found with that column mapping", 5000);
+      return;
+    }
+
+    showStatus(`Importing ${rows.length} transactions...`, 20000);
+    const res = await fetch("/api/import-csv", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ account_id: accountId, rows }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus(`Import failed: ${data.error}`, 6000);
+      return;
+    }
+    showStatus(`Imported ${data.imported} transactions`, 8000);
+    csvMappingArea.hidden = true;
+    csvFileInput.value = "";
+    refresh();
+  });
+}
