@@ -336,6 +336,8 @@ async function loadConnectedAccounts() {
     });
   });
 }
+
+async function loadCategories() {
   const res = await fetch("/api/categories");
   categories = await res.json();
   populateCategoryFilter();
