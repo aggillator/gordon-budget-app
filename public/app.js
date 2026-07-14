@@ -1,8 +1,10 @@
 const monthLabel = document.getElementById("monthLabel");
 const monthPicker = document.getElementById("monthPicker");
+const categoryFilter = document.getElementById("categoryFilter");
 const summaryList = document.getElementById("summaryList");
 const txnList = document.getElementById("txnList");
 const statusBar = document.getElementById("statusBar");
+const categoryManageList = document.getElementById("categoryManageList");
 
 let categories = [];
 
@@ -69,18 +71,58 @@ async function loadSummary(month) {
   }
 }
 
+function populateCategoryFilter() {
+  const current = categoryFilter.value;
+  categoryFilter.innerHTML =
+    `<option value="">All categories</option><option value="unassigned">Unassigned</option>` +
+    categories.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  categoryFilter.value = current || "";
+}
+
+function renderCategoryManage() {
+  categoryManageList.innerHTML = categories
+    .map(
+      (c) => `
+    <div class="manage-row">
+      <span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</span>
+      <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" />
+    </div>`
+    )
+    .join("");
+
+  categoryManageList.querySelectorAll(".budget-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      await fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: e.target.dataset.id,
+          monthly_budget: parseFloat(e.target.value) || 0,
+        }),
+      });
+      loadSummary(monthPicker.value);
+      showStatus("Budget updated");
+    });
+  });
+}
+
 async function loadCategories() {
   const res = await fetch("/api/categories");
   categories = await res.json();
+  populateCategoryFilter();
+  renderCategoryManage();
 }
 
 async function loadTransactions(month) {
-  const res = await fetch(`/api/transactions?month=${month}`);
+  let url = `/api/transactions?month=${month}`;
+  if (categoryFilter.value) url += `&category_id=${categoryFilter.value}`;
+
+  const res = await fetch(url);
   const rows = await res.json();
   txnList.innerHTML = "";
 
   if (!rows.length) {
-    txnList.innerHTML = `<p class="empty">No transactions for this month yet. Connect a bank and hit Sync.</p>`;
+    txnList.innerHTML = `<p class="empty">No transactions match this view yet.</p>`;
     return;
   }
 
@@ -93,9 +135,13 @@ async function loadTransactions(month) {
           `<option value="${c.id}" ${c.id === t.category_id ? "selected" : ""}>${c.name}</option>`
       )
       .join("");
+    const sourceName = t.accounts?.name || "Unknown account";
     row.innerHTML = `
       <div class="txn-date">${t.date}</div>
-      <div>${t.merchant_name || t.name}</div>
+      <div>
+        <div>${t.merchant_name || t.name}</div>
+        <div class="txn-source">${sourceName}</div>
+      </div>
       <div class="txn-amount">${fmt(t.amount)}</div>
       <select data-id="${t.id}">
         <option value="">- uncategorized -</option>
@@ -103,13 +149,18 @@ async function loadTransactions(month) {
       </select>
     `;
     row.querySelector("select").addEventListener("change", async (e) => {
-      await fetch("/api/transactions", {
+      const res = await fetch("/api/transactions", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: t.id, category_id: e.target.value || null }),
       });
-      loadSummary(monthPicker.value);
-      showStatus("Category updated");
+      const data = await res.json();
+      showStatus(
+        data.propagated
+          ? `Category updated - applied to ${data.propagated} similar transaction${data.propagated === 1 ? "" : "s"}`
+          : "Category updated"
+      );
+      refresh();
     });
     txnList.appendChild(row);
   }
@@ -124,6 +175,24 @@ async function refresh() {
 }
 
 monthPicker.addEventListener("change", refresh);
+categoryFilter.addEventListener("change", () => loadTransactions(monthPicker.value));
+
+document.getElementById("addCategoryForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = document.getElementById("newCatName").value.trim();
+  const monthly_budget = parseFloat(document.getElementById("newCatBudget").value) || 0;
+  if (!name) return;
+  await fetch("/api/categories", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, monthly_budget }),
+  });
+  document.getElementById("newCatName").value = "";
+  document.getElementById("newCatBudget").value = "";
+  await loadCategories();
+  loadSummary(monthPicker.value);
+  showStatus(`Added category "${name}"`);
+});
 
 async function runFullSync() {
   let totalAdded = 0,
@@ -144,6 +213,23 @@ async function runFullSync() {
   return { totalAdded, totalModified };
 }
 
+async function runAiCategorize() {
+  let totalCategorized = 0,
+    hasMore = true,
+    rounds = 0;
+
+  while (hasMore && rounds < 15) {
+    rounds++;
+    showStatus(`AI categorizing... (${totalCategorized} done)`, 60000);
+    const res = await fetch("/api/categorize-ai", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "AI categorization failed");
+    totalCategorized += data.categorized;
+    hasMore = data.hasMore;
+  }
+  return totalCategorized;
+}
+
 document.getElementById("syncBtn").addEventListener("click", async () => {
   try {
     const { totalAdded, totalModified } = await runFullSync();
@@ -151,6 +237,16 @@ document.getElementById("syncBtn").addEventListener("click", async () => {
     refresh();
   } catch (err) {
     showStatus(`Sync failed: ${err.message}`, 6000);
+  }
+});
+
+document.getElementById("aiCategorizeBtn").addEventListener("click", async () => {
+  try {
+    const total = await runAiCategorize();
+    showStatus(`AI categorized ${total} transaction${total === 1 ? "" : "s"}`);
+    refresh();
+  } catch (err) {
+    showStatus(`AI categorization failed: ${err.message}`, 6000);
   }
 });
 

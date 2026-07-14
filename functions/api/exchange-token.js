@@ -7,6 +7,7 @@ export async function onRequestPost({ request, env }) {
   const exch = await plaid(env, "/item/public_token/exchange", { public_token });
   const { access_token, item_id } = exch;
 
+  // Get institution + account details
   const acctData = await plaid(env, "/accounts/get", { access_token });
   const institutionName =
     acctData.item?.institution_id || acctData.accounts?.[0]?.name || "Bank";

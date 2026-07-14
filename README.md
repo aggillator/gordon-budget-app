@@ -32,6 +32,7 @@ Total cost: $0, as long as you stay on free tiers (should be permanent for one p
    | `PLAID_ENV` | `production` |
    | `SUPABASE_URL` | from Supabase settings |
    | `SUPABASE_SERVICE_KEY` | service_role key from Supabase |
+   | `ANTHROPIC_API_KEY` | from console.anthropic.com (only needed for AI categorization — costs a small amount per use, unlike everything else here) |
 
 5. Redeploy (Deployments → Retry deployment) so the functions pick up the new env vars.
 
@@ -45,15 +46,17 @@ This app will hold live bank transaction data with no login screen built in. Bef
 
 - **Connect a bank**: click "Connect a bank," log in through Plaid's widget (same flow your bank's own app uses), done.
 - **Sync transactions**: click "Sync transactions" any time to pull new activity. You can also hit `POST /api/sync-transactions` from a scheduled trigger (Cloudflare Cron Triggers, free) if you want it to run daily on its own — ask me if you want that wired up.
-- **Categorization**: new transactions are auto-suggested using the keyword rules in the `category_rules` table (seeded with a few of yours — Aisle One → Groceries, GasBuddy → Gas, etc.). Every dropdown in the transaction list lets you override it; overrides are remembered as "manual" so future syncs won't clobber them.
-- **Budgets**: edit `monthly_budget` on any category directly in Supabase's Table Editor for now (a settings screen to do this in the UI is a natural next add — let me know if you want it).
+- **Categorization**: new transactions are auto-suggested using the keyword rules in the `category_rules` table (seeded with a few of yours — Aisle One → Groceries, GasBuddy → Gas, etc.). Anything left unassigned can be run through **Categorize with AI**, which uses Claude Haiku to pick the best-fitting existing category. Every dropdown in the transaction list also lets you override manually; overrides are remembered as "manual" so future syncs and AI runs won't touch them.
+- **Filtering**: the category dropdown in the header filters the transaction list to just that category, or to everything still unassigned.
+- **Source account**: each transaction shows which connected account it came from (Amex, Schwab checking, PayPal, etc.) under the merchant name.
+- **Budgets & categories**: the "Manage categories" panel at the bottom lets you edit any monthly cap directly, or add a brand-new custom category.
 
 ## What's not built yet (intentionally left for a v2)
 
-- In-app budget editing UI (edit via Supabase Table Editor for now)
 - Multi-month trend charts
 - Automatic nightly sync (needs a Cloudflare Cron Trigger, ~5 min to add)
 - Splitting "Phone/Internet" back into Verizon/Boost/Ooma if you want that granularity
+- Deleting/archiving categories from the UI (currently add/edit only — delete via Supabase Table Editor)
 
 ## File map
 

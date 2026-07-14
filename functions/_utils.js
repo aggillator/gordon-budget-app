@@ -57,6 +57,29 @@ export async function plaid(env, endpoint, body) {
   return data;
 }
 
+// Talks to the Anthropic API for AI-assisted categorization.
+export async function anthropic(env, systemPrompt, userPrompt, maxTokens = 2000) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`Anthropic API failed: ${JSON.stringify(data)}`);
+  }
+  return data.content.map((b) => b.text || "").join("");
+}
+
 // Very small, deliberately dumb keyword categorizer.
 // Checks the transaction's merchant/name against saved keyword rules.
 export function suggestCategory(rules, txn) {
