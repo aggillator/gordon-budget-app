@@ -4,17 +4,22 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const month = url.searchParams.get("month"); // e.g. "2026-07"
   const categoryId = url.searchParams.get("category_id");
+  const search = url.searchParams.get("search");
 
   let path =
     "transactions?select=*,categories(name),accounts(name,type,subtype)&order=date.desc&limit=500";
 
-  if (month) {
+  if (month && !search) {
     path += `&date=gte.${month}-01&date=lt.${nextMonth(month)}-01`;
   }
   if (categoryId === "unassigned") {
     path += `&category_id=is.null`;
   } else if (categoryId) {
     path += `&category_id=eq.${categoryId}`;
+  }
+  if (search && search.trim()) {
+    const pattern = `*${encodeURIComponent(search.trim())}*`;
+    path += `&or=(merchant_name.ilike.${pattern},name.ilike.${pattern})`;
   }
 
   const rows = await sb(env, path);

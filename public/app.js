@@ -1,6 +1,7 @@
 const monthLabel = document.getElementById("monthLabel");
 const monthPicker = document.getElementById("monthPicker");
 const categoryFilter = document.getElementById("categoryFilter");
+const searchBox = document.getElementById("searchBox");
 const summaryList = document.getElementById("summaryList");
 const txnList = document.getElementById("txnList");
 const statusBar = document.getElementById("statusBar");
@@ -114,15 +115,23 @@ async function loadCategories() {
 }
 
 async function loadTransactions(month) {
-  let url = `/api/transactions?month=${month}`;
-  if (categoryFilter.value) url += `&category_id=${categoryFilter.value}`;
+  const params = new URLSearchParams();
+  const search = searchBox.value.trim();
+  if (search) {
+    params.set("search", search);
+  } else {
+    params.set("month", month);
+  }
+  if (categoryFilter.value) params.set("category_id", categoryFilter.value);
 
-  const res = await fetch(url);
+  const res = await fetch(`/api/transactions?${params.toString()}`);
   const rows = await res.json();
   txnList.innerHTML = "";
 
   if (!rows.length) {
-    txnList.innerHTML = `<p class="empty">No transactions match this view yet.</p>`;
+    txnList.innerHTML = search
+      ? `<p class="empty">No transactions match "${search}".</p>`
+      : `<p class="empty">No transactions match this view yet.</p>`;
     return;
   }
 
@@ -176,6 +185,12 @@ async function refresh() {
 
 monthPicker.addEventListener("change", refresh);
 categoryFilter.addEventListener("change", () => loadTransactions(monthPicker.value));
+
+let searchDebounce;
+searchBox.addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => loadTransactions(monthPicker.value), 300);
+});
 
 document.getElementById("addCategoryForm").addEventListener("submit", async (e) => {
   e.preventDefault();

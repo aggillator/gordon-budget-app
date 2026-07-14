@@ -51,8 +51,8 @@ export async function onRequestPost({ env }) {
 
 For each transaction below (format: id|merchant or description|amount), pick the best-fitting category.
 - If an existing category fits reasonably well, use it - copy its name exactly as written above.
-- If NONE of the existing categories fit, propose ONE short, general new category name for it (2-3 words, like "Pet Supplies" or "Subscriptions" - a category of spending, never the specific merchant or transaction description itself).
-- Only propose a new category when you're confident it represents a recurring type of spending, not a one-off. Reuse the same new category name for similar transactions in this batch rather than inventing near-duplicates.
+- Categories describe a TYPE of spending, never a specific brand, app, or merchant. "Eating Out" not "Dunkin", "Food Delivery" not "Uber Eats", "Insurance" not "Life Insurance", "Rideshare" not "Uber". Ask: would this category still make sense if the transaction were from a totally different company doing the same kind of thing? If not, it's too specific.
+- If NONE of the existing categories fit, propose ONE short, general new category name for it (2-3 words, a broad spending type per the rule above). Only propose a new category when you're confident it represents a recurring type of spending, not a one-off. Reuse the same new category name for similar transactions in this batch rather than inventing near-duplicates.
 - If truly nothing sensible fits, use "Uncategorized".
 
 Transactions:

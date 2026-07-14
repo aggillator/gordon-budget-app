@@ -191,6 +191,34 @@ h2 {
   margin-top: 2px;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--paper-line);
+  padding-bottom: 8px;
+  margin-bottom: 14px;
+}
+
+.section-header h2 {
+  border-bottom: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-box {
+  padding: 8px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  min-width: 220px;
+}
+
 .manage details {
   border-top: 1px solid var(--paper-line);
   padding-top: 14px;

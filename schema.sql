@@ -1,242 +1,87 @@
-:root {
-  --paper: #FAF7EF;
-  --paper-line: #E4DFCF;
-  --ink: #1B2A4A;
-  --ink-soft: #5B6B85;
-  --under: #2F6B4F;
-  --over: #B3492D;
-  --fixed-badge: #8A7B4F;
-}
+-- Budget Tracker schema
+-- Run this in Supabase: Dashboard > SQL Editor > New query > paste > Run
 
-* { box-sizing: border-box; }
+create table if not exists plaid_items (
+  id uuid primary key default gen_random_uuid(),
+  item_id text unique not null,
+  access_token text not null,          -- Plaid access token (server-side only, never exposed to frontend)
+  institution_name text,
+  cursor text,                          -- Plaid transactions sync cursor
+  created_at timestamptz default now()
+);
 
-body {
-  margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: 'Inter', system-ui, sans-serif;
-  min-height: 100vh;
-}
+create table if not exists accounts (
+  id uuid primary key default gen_random_uuid(),
+  plaid_item_id uuid references plaid_items(id) on delete cascade,
+  plaid_account_id text unique not null,
+  name text not null,
+  mask text,
+  type text,
+  subtype text,
+  created_at timestamptz default now()
+);
 
-.masthead {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 28px 24px 20px;
-  border-bottom: 2px solid var(--ink);
-}
+create table if not exists categories (
+  id uuid primary key default gen_random_uuid(),
+  name text unique not null,
+  monthly_budget numeric(10,2) not null default 0,
+  is_fixed boolean default false,       -- true = fixed bill (rent, tuition), false = variable/discretionary
+  sort_order int default 0
+);
 
-.eyebrow {
-  margin: 0 0 4px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
+create table if not exists category_rules (
+  id uuid primary key default gen_random_uuid(),
+  keyword text not null,                -- lowercase substring matched against merchant/name
+  category_id uuid references categories(id) on delete cascade
+);
 
-h1 {
-  margin: 0;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: clamp(28px, 5vw, 40px);
-}
+create table if not exists transactions (
+  id uuid primary key default gen_random_uuid(),
+  plaid_transaction_id text unique not null,
+  account_id uuid references accounts(id) on delete cascade,
+  date date not null,
+  name text not null,
+  merchant_name text,
+  amount numeric(10,2) not null,        -- positive = money out, negative = money in (Plaid convention)
+  category_id uuid references categories(id),
+  category_source text default 'unassigned', -- 'auto' | 'manual' | 'unassigned'
+  pending boolean default false,
+  created_at timestamptz default now()
+);
 
-.masthead-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+create index if not exists idx_transactions_date on transactions(date);
+create index if not exists idx_transactions_category on transactions(category_id);
 
-select, button {
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-}
+-- Seed categories (broad spending types, not specific merchants/brands -
+-- edit amounts any time in the app)
+insert into categories (name, monthly_budget, is_fixed, sort_order) values
+  ('Rent', 1850, true, 1),
+  ('Tuition', 445, true, 2),
+  ('Insurance', 273.32, true, 3),
+  ('Electric (PSEG)', 265, true, 5),
+  ('Phone/Internet', 108, true, 6),  -- Verizon+Boost+Ooma combined, split later if you want
+  ('Child Support', 800, true, 8),
+  ('Credit Card Payments', 476, true, 9),
+  ('Groceries', 600, false, 10),
+  ('Gas', 150, false, 11),
+  ('Rideshare', 100, false, 12),
+  ('Eating Out', 40, false, 13),
+  ('Healthcare', 50, false, 14),
+  ('Kids/Misc', 160, false, 16),
+  ('Knife/EDC Hobby', 75, false, 17),
+  ('Food Delivery', 75, false, 18),
+  ('Uncategorized', 0, false, 99)
+on conflict (name) do nothing;
 
-select {
-  padding: 8px 10px;
-  border: 1px solid var(--ink);
-  background: var(--paper);
-  color: var(--ink);
-  border-radius: 3px;
-}
-
-.btn {
-  padding: 9px 16px;
-  border-radius: 3px;
-  border: 1px solid var(--ink);
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.btn-primary { background: var(--ink); color: var(--paper); }
-.btn-quiet { background: transparent; color: var(--ink); }
-.btn:hover { opacity: 0.85; }
-
-main {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 24px;
-  display: grid;
-  gap: 40px;
-}
-
-h2 {
-  font-family: 'Fraunces', serif;
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0 0 14px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--paper-line);
-}
-
-.ledger-rows { display: flex; flex-direction: column; }
-
-.cat-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--paper-line);
-}
-
-.cat-row .cat-name {
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  color: var(--fixed-badge);
-  border: 1px solid var(--fixed-badge);
-  border-radius: 2px;
-  padding: 1px 5px;
-}
-
-.cat-figures {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
-  text-align: right;
-}
-
-.cat-figures .over { color: var(--over); }
-.cat-figures .under { color: var(--under); }
-
-.bar-track {
-  grid-column: 1 / -1;
-  height: 6px;
-  background: var(--paper-line);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.bar-fill { height: 100%; }
-.bar-fill.under { background: var(--under); }
-.bar-fill.over { background: var(--over); }
-
-.txn-row {
-  display: grid;
-  grid-template-columns: 90px 1fr auto 160px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--paper-line);
-  font-size: 14px;
-}
-
-.txn-date {
-  font-family: 'JetBrains Mono', monospace;
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-
-.txn-amount {
-  font-family: 'JetBrains Mono', monospace;
-  text-align: right;
-}
-
-.txn-row select {
-  padding: 5px 6px;
-  font-size: 12px;
-}
-
-.empty {
-  color: var(--ink-soft);
-  font-style: italic;
-  padding: 12px 0;
-}
-
-.status-bar {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--ink);
-  color: var(--paper);
-  padding: 10px 18px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-@media (max-width: 600px) {
-  .txn-row { grid-template-columns: 70px 1fr auto; }
-  .txn-row select { grid-column: 1 / -1; }
-}
-
-.txn-source {
-  font-size: 11px;
-  color: var(--ink-soft);
-  margin-top: 2px;
-}
-
-.manage details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.manage summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
-}
-
-.manage-row {
-  display: grid;
-  grid-template-columns: 1fr 120px;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--paper-line);
-}
-
-.manage-row input {
-  font-family: 'JetBrains Mono', monospace;
-  padding: 6px 8px;
-  border: 1px solid var(--ink);
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.add-category-form {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-
-.add-category-form input {
-  padding: 8px 10px;
-  border: 1px solid var(--ink);
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: 'Inter', sans-serif;
-}
-
-.add-category-form input[type="text"] { flex: 1; min-width: 160px; }
-.add-category-form input[type="number"] { width: 140px; }
+-- A few starter auto-categorization rules — add more from the app as you go.
+-- The AI categorizer is instructed to prefer broad categories like these
+-- (a spending TYPE) over specific merchant/brand names.
+insert into category_rules (keyword, category_id)
+  select 'aisle one', id from categories where name = 'Groceries'
+union all select 'gasbuddy', id from categories where name = 'Gas'
+union all select 'uber eats', id from categories where name = 'Food Delivery'
+union all select 'uber', id from categories where name = 'Rideshare'
+union all select 'cvs', id from categories where name = 'Healthcare'
+union all select 'dunkin', id from categories where name = 'Eating Out'
+union all select 'paypal', id from categories where name = 'Credit Card Payments'
+on conflict do nothing;
