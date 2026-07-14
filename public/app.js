@@ -95,13 +95,14 @@ function renderCategoryManage() {
     .map(
       (c) => `
     <div class="manage-row">
-      <input type="text" value="${c.name}" data-id="${c.id}" class="name-input" ${c.is_fixed ? "" : ""} />
+      <input type="text" value="${c.name}" data-id="${c.id}" class="name-input" />
       <label class="checkbox-label manage-checkbox">
         <input type="checkbox" data-id="${c.id}" class="exclude-input" ${c.exclude_from_budget ? "checked" : ""} />
         Not in budget
       </label>
       <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
       ${c.is_fixed ? '<span class="badge">FIXED</span>' : "<span></span>"}
+      <button type="button" class="delete-cat-btn" data-id="${c.id}" data-name="${c.name}" title="Delete category">×</button>
     </div>`
     )
     .join("");
@@ -149,6 +150,27 @@ function renderCategoryManage() {
         e.target.checked
           ? "Marked as not a budget category"
           : "Marked as a budget category"
+      );
+      refresh();
+    });
+  });
+
+  categoryManageList.querySelectorAll(".delete-cat-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const { id, name } = e.target.dataset;
+      if (
+        !confirm(
+          `Delete "${name}"? Any transactions currently in this category will become uncategorized - they won't be deleted, just unassigned.`
+        )
+      ) {
+        return;
+      }
+      const res = await fetch(`/api/categories?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      showStatus(
+        data.uncategorized
+          ? `Deleted "${name}" - ${data.uncategorized} transaction${data.uncategorized === 1 ? "" : "s"} now unassigned`
+          : `Deleted "${name}"`
       );
       refresh();
     });

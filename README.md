@@ -54,6 +54,7 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Budgets & categories**: the "Manage categories" panel at the bottom lets you edit any monthly cap directly, or add a brand-new custom category.
 - **Quick-add categories**: every transaction's category dropdown also has a "+ New category..." option at the bottom - pick it, type a name, and choose whether it should count toward the budget or not. No need to scroll to "Manage categories" for one-off additions.
 - **Non-budget categories**: categories marked "not a budget category" (income, Maaser, transfers, etc.) are fully usable for filtering and searching, but never show up in the Budget vs. Actual view, and their budget field is locked at $0 in "Manage categories" - they're for tracking, not capping.
+- **Deleting categories**: the × next to each category in "Manage categories" deletes it. Transactions in that category aren't deleted - they just become uncategorized again, ready to be re-sorted by a rule, AI, or manually.
 
 ## What's not built yet (intentionally left for a v2)
 

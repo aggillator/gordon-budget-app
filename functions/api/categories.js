@@ -32,3 +32,16 @@ export async function onRequestPatch({ request, env }) {
   await sb(env, `categories?id=eq.${id}`, { method: "PATCH", body });
   return json({ ok: true });
 }
+
+export async function onRequestDelete({ request, env }) {
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id");
+  if (!id) return json({ error: "id required" }, 400);
+
+  const uncategorized = await sb(env, "rpc/delete_category", {
+    method: "POST",
+    body: { target_id: id },
+  });
+
+  return json({ ok: true, uncategorized });
+}

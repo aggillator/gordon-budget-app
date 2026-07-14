@@ -235,11 +235,29 @@ h2 {
 
 .manage-row {
   display: grid;
-  grid-template-columns: 1fr 160px 120px 60px;
+  grid-template-columns: 1fr 160px 120px 60px 32px;
   gap: 10px;
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--paper-line);
+}
+
+.delete-cat-btn {
+  background: transparent;
+  border: 1px solid var(--paper-line);
+  border-radius: 3px;
+  color: var(--over);
+  font-size: 18px;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.delete-cat-btn:hover {
+  background: var(--over);
+  color: var(--paper);
+  border-color: var(--over);
 }
 
 .manage-row .name-input {

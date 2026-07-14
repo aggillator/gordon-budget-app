@@ -73,6 +73,24 @@ create trigger trg_protect_manual_category
 before update on transactions
 for each row execute function protect_manual_category();
 
+-- Deletes a category, uncategorizing any transactions currently assigned to
+-- it first. Deliberately bypasses the trigger above for this operation only -
+-- deleting the category itself is an explicit user action that should always
+-- free up its transactions, manual or not.
+create or replace function delete_category(target_id uuid)
+returns integer as $$
+declare
+  affected integer;
+begin
+  set local session_replication_role = replica;
+  update transactions set category_id = null, category_source = 'unassigned' where category_id = target_id;
+  get diagnostics affected = row_count;
+  set local session_replication_role = default;
+  delete from categories where id = target_id;
+  return affected;
+end;
+$$ language plpgsql security definer;
+
 -- Seed categories (broad spending types, not specific merchants/brands -
 -- edit amounts any time in the app)
 insert into categories (name, monthly_budget, is_fixed, sort_order) values
