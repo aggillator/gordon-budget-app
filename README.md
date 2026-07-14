@@ -57,7 +57,7 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Deleting categories**: the × next to each category in "Manage categories" deletes it. Transactions in that category aren't deleted - they just become uncategorized again, ready to be re-sorted by a rule, AI, or manually.
 - **Click a category to filter**: clicking any row in "Budget vs. actual" filters the transaction list to that category and scrolls you down to it. "× Clear filter" next to the category dropdown resets back to the full list.
 - **Editable transaction names**: click into the merchant/description text on any transaction to rename it for display. This is stored separately from the raw bank data, so a future sync never overwrites your rename.
-- **Alphabetized dropdowns**: the category filter and every per-transaction category picker are sorted alphabetically. "Manage categories" stays in its original logical order (fixed bills first, etc.) since that's a different use case.
+- **Alphabetized everywhere**: the category filter, every per-transaction category picker, and the "Manage categories" list are all sorted A-Z. The Budget vs. Actual summary keeps its original logical order (fixed bills first, etc.) since that's a different use case.
 
 ## What's not built yet (intentionally left for a v2)
 

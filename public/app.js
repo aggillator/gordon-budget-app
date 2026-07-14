@@ -19,6 +19,17 @@ function fmt(n) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
+// Plaid's raw convention is the opposite of how people read a statement:
+// positive = money out, negative = money in. This flips it for display only
+// - debits show "-", deposits show "+" - the underlying data/math is untouched.
+function fmtTxnAmount(amount) {
+  const isDeposit = amount < 0;
+  const abs = Math.abs(amount);
+  const sign = isDeposit ? "+" : "-";
+  const cls = isDeposit ? "txn-deposit" : "txn-debit";
+  return `<span class="${cls}">${sign}${fmt(abs)}</span>`;
+}
+
 function escapeAttr(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -125,7 +136,7 @@ function categoryOptionsHtml(selectedId) {
 }
 
 function renderCategoryManage() {
-  categoryManageList.innerHTML = categories
+  categoryManageList.innerHTML = sortedCategoriesAlpha()
     .map(
       (c) => `
     <div class="manage-row">
@@ -279,7 +290,7 @@ async function loadTransactions(month) {
         <input type="text" class="txn-name-input" value="${escapeAttr(displayName)}" data-id="${t.id}" />
         <div class="txn-source">${sourceName}</div>
       </div>
-      <div class="txn-amount">${fmt(t.amount)}</div>
+      <div class="txn-amount">${fmtTxnAmount(t.amount)}</div>
       <select data-id="${t.id}">
         <option value="">- uncategorized -</option>
         ${categoryOptionsHtml(t.category_id)}
@@ -453,3 +464,79 @@ document.getElementById("connectBtn").addEventListener("click", async () => {
 
 populateMonthPicker();
 refresh();
+
+async function exportPdf() {
+  showStatus("Generating PDF...", 10000);
+  const month = monthPicker.value;
+  const search = searchBox.value.trim();
+  const filterCat = categories.find((c) => c.id === categoryFilter.value);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.setFontSize(18);
+  doc.text("Household Ledger", 14, 18);
+  doc.setFontSize(11);
+  doc.setTextColor(100);
+  let subtitle = monthName(month);
+  if (search) subtitle = `Search: "${search}" (all months)`;
+  else if (filterCat) subtitle += ` - ${filterCat.name} only`;
+  doc.text(subtitle, 14, 25);
+
+  // Budget vs. actual (always reflects the selected month, regardless of
+  // any search/category filter applied to the transaction list below)
+  const summaryRes = await fetch(`/api/summary?month=${month}`);
+  const { summary } = await summaryRes.json();
+  doc.autoTable({
+    startY: 32,
+    head: [["Category", "Budget", "Actual", "Difference"]],
+    body: summary.map((c) => {
+      const diff = c.budget - c.actual;
+      return [
+        c.name,
+        fmt(c.budget),
+        fmt(c.actual),
+        diff >= 0 ? `${fmt(diff)} under` : `${fmt(-diff)} over`,
+      ];
+    }),
+    theme: "striped",
+    headStyles: { fillColor: [27, 42, 74] },
+    styles: { fontSize: 9 },
+  });
+
+  // Transaction list - respects whatever filter/search is currently active
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  else params.set("month", month);
+  if (categoryFilter.value) params.set("category_id", categoryFilter.value);
+
+  const txnRes = await fetch(`/api/transactions?${params.toString()}`);
+  const txns = await txnRes.json();
+
+  doc.autoTable({
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [["Date", "Description", "Category", "Account", "Amount"]],
+    body: txns.map((t) => {
+      const isDeposit = t.amount < 0;
+      const amountStr = `${isDeposit ? "+" : "-"}${fmt(Math.abs(t.amount))}`;
+      return [
+        t.date,
+        t.custom_name || t.merchant_name || t.name,
+        t.categories?.name || "Uncategorized",
+        t.accounts?.name || "",
+        amountStr,
+      ];
+    }),
+    theme: "striped",
+    headStyles: { fillColor: [27, 42, 74] },
+    styles: { fontSize: 8 },
+  });
+
+  const filenamePart = search ? "search" : filterCat ? filterCat.name.replace(/\s+/g, "-") : month;
+  doc.save(`ledger-${filenamePart}.pdf`);
+  showStatus("PDF downloaded");
+}
+
+document.getElementById("exportPdfBtn").addEventListener("click", () => {
+  exportPdf().catch((err) => showStatus(`Export failed: ${err.message}`, 6000));
+});

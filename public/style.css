@@ -171,6 +171,9 @@ h2 {
   text-align: right;
 }
 
+.txn-deposit { color: var(--under); }
+.txn-debit { color: var(--ink); }
+
 .txn-row select {
   padding: 5px 6px;
   font-size: 12px;
