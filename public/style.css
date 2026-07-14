@@ -183,6 +183,7 @@ h2 {
 @media (max-width: 600px) {
   .txn-row { grid-template-columns: 70px 1fr auto; }
   .txn-row select { grid-column: 1 / -1; }
+  .manage-row { grid-template-columns: 1fr; }
 }
 
 .txn-source {
@@ -234,14 +235,28 @@ h2 {
 
 .manage-row {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: 1fr 160px 120px 60px;
   gap: 10px;
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--paper-line);
 }
 
-.manage-row input {
+.manage-row .name-input {
+  font-family: 'Inter', sans-serif;
+  padding: 6px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.manage-checkbox {
+  width: auto;
+  font-size: 12px;
+}
+
+.manage-row input[type="number"] {
   font-family: 'JetBrains Mono', monospace;
   padding: 6px 8px;
   border: 1px solid var(--ink);

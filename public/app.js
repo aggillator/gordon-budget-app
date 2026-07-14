@@ -95,11 +95,30 @@ function renderCategoryManage() {
     .map(
       (c) => `
     <div class="manage-row">
-      <span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""} ${c.exclude_from_budget ? '<span class="excluded-badge">NOT IN BUDGET</span>' : ""}</span>
+      <input type="text" value="${c.name}" data-id="${c.id}" class="name-input" ${c.is_fixed ? "" : ""} />
+      <label class="checkbox-label manage-checkbox">
+        <input type="checkbox" data-id="${c.id}" class="exclude-input" ${c.exclude_from_budget ? "checked" : ""} />
+        Not in budget
+      </label>
       <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
+      ${c.is_fixed ? '<span class="badge">FIXED</span>' : "<span></span>"}
     </div>`
     )
     .join("");
+
+  categoryManageList.querySelectorAll(".name-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      const name = e.target.value.trim();
+      if (!name) return;
+      await fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: e.target.dataset.id, name }),
+      });
+      showStatus("Category renamed");
+      refresh();
+    });
+  });
 
   categoryManageList.querySelectorAll(".budget-input").forEach((input) => {
     input.addEventListener("change", async (e) => {
@@ -113,6 +132,25 @@ function renderCategoryManage() {
       });
       loadSummary(monthPicker.value);
       showStatus("Budget updated");
+    });
+  });
+
+  categoryManageList.querySelectorAll(".exclude-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      await fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: e.target.dataset.id,
+          exclude_from_budget: e.target.checked,
+        }),
+      });
+      showStatus(
+        e.target.checked
+          ? "Marked as not a budget category"
+          : "Marked as a budget category"
+      );
+      refresh();
     });
   });
 }
