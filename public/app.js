@@ -332,10 +332,10 @@ function guessColumn(headers, candidates) {
 }
 
 function populateAmazonMapping() {
-  const dateGuess = guessColumn(amazonHeaders, ["orderdate", "shipmentdate", "date"]);
+  const dateGuess = guessColumn(amazonHeaders, ["shipdate", "shipmentdate", "orderdate", "date"]);
   const titleGuess = guessColumn(amazonHeaders, ["title", "productname", "itemname", "description"]);
   const amountGuess = guessColumn(amazonHeaders, [
-    "itemtotal", "totalowed", "itemsubtotal", "amount", "total",
+    "totalamount", "itemtotal", "totalowed", "itemsubtotal", "amount", "total",
   ]);
   const orderIdGuess = guessColumn(amazonHeaders, ["orderid", "orderno", "orderno."]);
 
@@ -346,14 +346,14 @@ function populateAmazonMapping() {
       .join("");
 
   document.getElementById("amazonMappingSection").innerHTML = `
-    <label>Order date column<select id="mapDate">${opts(dateGuess)}</select></label>
+    <label>Ship/order date column<select id="mapDate">${opts(dateGuess)}</select></label>
     <label>Item title column<select id="mapTitle">${opts(titleGuess)}</select></label>
-    <label>Amount column<select id="mapAmount">${opts(amountGuess)}</select></label>
-    <label>Order ID column (optional, groups multi-item orders)<select id="mapOrderId">${opts(orderIdGuess)}</select></label>
+    <label>Amount column (use "Total Amount" - already includes tax, shipping, discounts)<select id="mapAmount">${opts(amountGuess)}</select></label>
+    <label>Order ID column (required - groups items into shipments)<select id="mapOrderId">${opts(orderIdGuess)}</select></label>
   `;
   document.getElementById("amazonMappingSection").hidden = false;
   document.getElementById("amazonPreviewNote").textContent =
-    `${amazonRows.length} rows loaded. Check the column mapping below looks right before matching.`;
+    `${amazonRows.length} rows loaded. "Total Amount" already nets out tax, shipping, and discounts per item - use that column for the most accurate match.`;
   document.getElementById("matchAmazonBtn").hidden = false;
 }
 
@@ -376,7 +376,8 @@ document.getElementById("matchAmazonBtn").addEventListener("click", async () => 
 
   const groups = {};
   amazonRows.forEach((row, i) => {
-    const key = orderIdCol ? row[orderIdCol] : `row-${i}`;
+    const idPart = orderIdCol ? row[orderIdCol] : `row-${i}`;
+    const key = `${idPart}|${row[dateCol]}`;
     if (!groups[key]) groups[key] = { date: row[dateCol], titles: [], amount: 0 };
     const amt = parseFloat(String(row[amountCol]).replace(/[^0-9.-]/g, "")) || 0;
     groups[key].titles.push(row[titleCol]);
@@ -968,8 +969,6 @@ function populateCsvMapping() {
     .map((a) => `<option value="${a.id}">${a.name}${a.mask ? ` (...${a.mask})` : ""}</option>`)
     .join("");
 
-  // Auto-switch to split mode if we found separate withdrawal/deposit
-  // columns and no clean single amount column.
   csvAmountMode.value = withdrawalGuess && depositGuess ? "split" : "single";
   updateCsvAmountModeUI();
   csvMappingArea.hidden = false;
@@ -1024,10 +1023,6 @@ if (csvImportBtn) {
 
         let amount;
         if (isSplit) {
-          // App convention: positive = money out (withdrawal), negative =
-          // money in (deposit) - matches Plaid. A row should only have one
-          // of the two columns filled in; if both happen to have a value,
-          // withdrawal wins (rare edge case, e.g. a $0 placeholder).
           const withdrawal = csvWithdrawalCol.value ? parseAmountCell(row[csvWithdrawalCol.value]) : 0;
           const deposit = csvDepositCol.value ? parseAmountCell(row[csvDepositCol.value]) : 0;
           amount = withdrawal !== 0 ? Math.abs(withdrawal) : -Math.abs(deposit);
@@ -1036,7 +1031,7 @@ if (csvImportBtn) {
           if (csvFlipSign.checked) amount = -amount;
         }
 
-        if (amount === 0) return null; // skip $0 / blank rows entirely
+        if (amount === 0) return null;
         return { date, name: row[descCol], amount };
       })
       .filter(Boolean);
