@@ -270,6 +270,64 @@ h2 {
   margin-bottom: 10px;
 }
 
+.filters details {
+  border-top: 1px solid var(--paper-line);
+  padding-top: 14px;
+}
+
+.filters summary,
+.chart-section summary {
+  cursor: pointer;
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.filters-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.filters-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.filters-grid input,
+.filters-grid select {
+  padding: 7px 9px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+.filter-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.chart-section details {
+  border-top: 1px solid var(--paper-line);
+  padding-top: 14px;
+}
+
+.chart-section canvas {
+  margin-top: 10px;
+  max-height: 320px;
+}
+
 .manage-row {
   display: grid;
   grid-template-columns: 1fr 160px 120px 60px 32px;

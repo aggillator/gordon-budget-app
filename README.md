@@ -58,6 +58,9 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Click a category to filter**: clicking any row in "Budget vs. actual" filters the transaction list to that category and scrolls you down to it. "× Clear filter" next to the category dropdown resets back to the full list.
 - **Editable transaction names**: click into the merchant/description text on any transaction to rename it for display. This is stored separately from the raw bank data, so a future sync never overwrites your rename.
 - **Alphabetized everywhere**: the category filter, every per-transaction category picker, and the "Manage categories" list are all sorted A-Z. The Budget vs. Actual summary keeps its original logical order (fixed bills first, etc.) since that's a different use case.
+- **Advanced filters**: collapsible panel with date range (overrides the month picker when set), deposits-only/withdrawals-only, min/max amount, and which connected account. All combine with the category filter and search. Whatever's active also applies to the PDF export, so what you see is what you get.
+- **Spending breakdown chart**: collapsible pie chart of the selected month's actual spend by category. Opens lazily (only renders when you expand it) and updates when you change the month while it's open.
+- **Manage categories moved to the top** of the page, still collapsed by default so it stays out of the way until you need it.
 
 ## What's not built yet (intentionally left for a v2)
 

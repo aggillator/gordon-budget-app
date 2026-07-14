@@ -3,19 +3,31 @@ import { json, sb } from "../_utils.js";
 export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const month = url.searchParams.get("month"); // e.g. "2026-07"
+  const dateFrom = url.searchParams.get("date_from");
+  const dateTo = url.searchParams.get("date_to");
   const categoryId = url.searchParams.get("category_id");
+  const accountId = url.searchParams.get("account_id");
   const search = url.searchParams.get("search");
 
   let path =
     "transactions?select=*,categories(name),accounts(name,type,subtype)&order=date.desc&limit=500";
 
-  if (month && !search) {
+  if (search) {
+    // search spans all time, ignores month/date-range on purpose
+  } else if (dateFrom || dateTo) {
+    if (dateFrom) path += `&date=gte.${dateFrom}`;
+    if (dateTo) path += `&date=lte.${dateTo}`;
+  } else if (month) {
     path += `&date=gte.${month}-01&date=lt.${nextMonth(month)}-01`;
   }
+
   if (categoryId === "unassigned") {
     path += `&category_id=is.null`;
   } else if (categoryId) {
     path += `&category_id=eq.${categoryId}`;
+  }
+  if (accountId) {
+    path += `&account_id=eq.${accountId}`;
   }
   if (search && search.trim()) {
     const pattern = `*${encodeURIComponent(search.trim())}*`;

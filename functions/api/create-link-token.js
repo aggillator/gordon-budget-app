@@ -7,6 +7,7 @@ export async function onRequestPost({ env }) {
     products: ["transactions"],
     country_codes: ["US"],
     language: "en",
+    transactions: { days_requested: 730 }, // 2 years instead of Plaid's 90-day default
   });
   return json({ link_token: data.link_token });
 }

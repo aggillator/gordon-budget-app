@@ -7,9 +7,24 @@ const summaryList = document.getElementById("summaryList");
 const txnList = document.getElementById("txnList");
 const statusBar = document.getElementById("statusBar");
 const categoryManageList = document.getElementById("categoryManageList");
+const filterDateFrom = document.getElementById("filterDateFrom");
+const filterDateTo = document.getElementById("filterDateTo");
+const filterType = document.getElementById("filterType");
+const filterMinAmount = document.getElementById("filterMinAmount");
+const filterMaxAmount = document.getElementById("filterMaxAmount");
+const filterAccount = document.getElementById("filterAccount");
+const chartDetails = document.getElementById("chartDetails");
 
 let categories = [];
+let accounts = [];
+let spendingChartInstance = null;
 const NEW_CATEGORY_VALUE = "__new__";
+
+const CHART_PALETTE = [
+  "#1B2A4A", "#2F6B4F", "#B3492D", "#8A7B4F", "#5B6B85",
+  "#6B8F71", "#C97B4A", "#4A6FA5", "#A0785A", "#3E7C7C",
+  "#7A5C8E", "#9A8B4F",
+];
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
@@ -17,6 +32,14 @@ function currentMonth() {
 
 function fmt(n) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function escapeAttr(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 // Plaid's raw convention is the opposite of how people read a statement:
@@ -28,14 +51,6 @@ function fmtTxnAmount(amount) {
   const sign = isDeposit ? "+" : "-";
   const cls = isDeposit ? "txn-deposit" : "txn-debit";
   return `<span class="${cls}">${sign}${fmt(abs)}</span>`;
-}
-
-function escapeAttr(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function monthName(m) {
@@ -71,6 +86,18 @@ function sortedCategoriesAlpha() {
   return [...categories].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function loadAccounts() {
+  const res = await fetch("/api/accounts");
+  accounts = await res.json();
+  const current = filterAccount.value;
+  filterAccount.innerHTML =
+    `<option value="">All accounts</option>` +
+    accounts
+      .map((a) => `<option value="${a.id}">${a.name}${a.mask ? ` (...${a.mask})` : ""}</option>`)
+      .join("");
+  filterAccount.value = current || "";
+}
+
 async function loadSummary(month) {
   const res = await fetch(`/api/summary?month=${month}`);
   const { summary } = await res.json();
@@ -103,6 +130,45 @@ async function loadSummary(month) {
     });
     summaryList.appendChild(row);
   }
+
+  if (chartDetails.open) renderSpendingChart(summary);
+}
+
+function renderSpendingChart(summary) {
+  const data = summary.filter((c) => c.actual > 0);
+  const ctx = document.getElementById("spendingChart").getContext("2d");
+  if (spendingChartInstance) spendingChartInstance.destroy();
+
+  if (!data.length) {
+    spendingChartInstance = null;
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    return;
+  }
+
+  spendingChartInstance = new Chart(ctx, {
+    type: "pie",
+    data: {
+      labels: data.map((c) => c.name),
+      datasets: [
+        {
+          data: data.map((c) => c.actual),
+          backgroundColor: data.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]),
+          borderColor: "#FAF7EF",
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: { position: "right", labels: { font: { family: "Inter" } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.label}: ${fmt(ctx.parsed)}`,
+          },
+        },
+      },
+    },
+  });
 }
 
 function populateCategoryFilter() {
@@ -258,24 +324,61 @@ async function setTransactionCategory(txnId, categoryId) {
   refresh();
 }
 
-async function loadTransactions(month) {
+// Builds the query params shared by both the on-screen transaction list and
+// the PDF export, so what you see is what you get.
+function buildTransactionParams(month) {
   const params = new URLSearchParams();
   const search = searchBox.value.trim();
+  const dateFrom = filterDateFrom.value;
+  const dateTo = filterDateTo.value;
+
   if (search) {
     params.set("search", search);
+  } else if (dateFrom || dateTo) {
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
   } else {
     params.set("month", month);
   }
   if (categoryFilter.value) params.set("category_id", categoryFilter.value);
+  if (filterAccount.value) params.set("account_id", filterAccount.value);
+  return params;
+}
 
-  const res = await fetch(`/api/transactions?${params.toString()}`);
+// Type (deposit/withdrawal) and min/max amount are applied client-side after
+// fetch rather than in SQL - Plaid stores withdrawals positive and deposits
+// negative, so a clean "amount over $X regardless of direction" filter is
+// simpler and more robust done here than as a sign-aware Postgres query.
+function applyClientFilters(rows) {
+  const type = filterType.value;
+  const min = parseFloat(filterMinAmount.value);
+  const max = parseFloat(filterMaxAmount.value);
+
+  return rows.filter((t) => {
+    if (type === "withdrawal" && t.amount <= 0) return false;
+    if (type === "deposit" && t.amount >= 0) return false;
+    const abs = Math.abs(t.amount);
+    if (!isNaN(min) && abs < min) return false;
+    if (!isNaN(max) && abs > max) return false;
+    return true;
+  });
+}
+
+async function fetchFilteredTransactions(month) {
+  const res = await fetch(`/api/transactions?${buildTransactionParams(month).toString()}`);
   const rows = await res.json();
+  return applyClientFilters(rows);
+}
+
+async function loadTransactions(month) {
+  const rows = await fetchFilteredTransactions(month);
   txnList.innerHTML = "";
 
   if (!rows.length) {
+    const search = searchBox.value.trim();
     txnList.innerHTML = search
       ? `<p class="empty">No transactions match "${search}".</p>`
-      : `<p class="empty">No transactions match this view yet.</p>`;
+      : `<p class="empty">No transactions match the current filters.</p>`;
     return;
   }
 
@@ -345,6 +448,7 @@ async function refresh() {
   const month = monthPicker.value;
   monthLabel.textContent = monthName(month);
   await loadCategories();
+  await loadAccounts();
   await loadSummary(month);
   await loadTransactions(month);
 }
@@ -360,6 +464,32 @@ let searchDebounce;
 searchBox.addEventListener("input", () => {
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => loadTransactions(monthPicker.value), 300);
+});
+
+[filterDateFrom, filterDateTo, filterType, filterAccount].forEach((el) =>
+  el.addEventListener("change", () => loadTransactions(monthPicker.value))
+);
+
+let amountDebounce;
+[filterMinAmount, filterMaxAmount].forEach((el) =>
+  el.addEventListener("input", () => {
+    clearTimeout(amountDebounce);
+    amountDebounce = setTimeout(() => loadTransactions(monthPicker.value), 300);
+  })
+);
+
+document.getElementById("clearAdvancedFilters").addEventListener("click", () => {
+  filterDateFrom.value = "";
+  filterDateTo.value = "";
+  filterType.value = "";
+  filterMinAmount.value = "";
+  filterMaxAmount.value = "";
+  filterAccount.value = "";
+  loadTransactions(monthPicker.value);
+});
+
+chartDetails.addEventListener("toggle", () => {
+  if (chartDetails.open) loadSummary(monthPicker.value);
 });
 
 document.getElementById("addCategoryForm").addEventListener("submit", async (e) => {
@@ -479,12 +609,15 @@ async function exportPdf() {
   doc.setFontSize(11);
   doc.setTextColor(100);
   let subtitle = monthName(month);
-  if (search) subtitle = `Search: "${search}" (all months)`;
-  else if (filterCat) subtitle += ` - ${filterCat.name} only`;
+  if (search) subtitle = `Search: "${search}" (all time)`;
+  else if (filterDateFrom.value || filterDateTo.value) {
+    subtitle = `${filterDateFrom.value || "..."} to ${filterDateTo.value || "..."}`;
+  }
+  if (filterCat) subtitle += ` - ${filterCat.name} only`;
   doc.text(subtitle, 14, 25);
 
   // Budget vs. actual (always reflects the selected month, regardless of
-  // any search/category filter applied to the transaction list below)
+  // any other filter applied to the transaction list below)
   const summaryRes = await fetch(`/api/summary?month=${month}`);
   const { summary } = await summaryRes.json();
   doc.autoTable({
@@ -504,14 +637,9 @@ async function exportPdf() {
     styles: { fontSize: 9 },
   });
 
-  // Transaction list - respects whatever filter/search is currently active
-  const params = new URLSearchParams();
-  if (search) params.set("search", search);
-  else params.set("month", month);
-  if (categoryFilter.value) params.set("category_id", categoryFilter.value);
-
-  const txnRes = await fetch(`/api/transactions?${params.toString()}`);
-  const txns = await txnRes.json();
+  // Transaction list - respects every active filter (search, category,
+  // date range, account, type, amount range)
+  const txns = await fetchFilteredTransactions(month);
 
   doc.autoTable({
     startY: doc.lastAutoTable.finalY + 10,

@@ -10,6 +10,7 @@
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
   <header class="masthead">
@@ -28,20 +29,6 @@
   </header>
 
   <main>
-    <section class="summary" id="summarySection">
-      <h2>Budget vs. actual</h2>
-      <div id="summaryList" class="ledger-rows"></div>
-    </section>
-
-    <section class="transactions">
-      <div class="section-header">
-        <h2>Transactions</h2>
-        <input type="text" id="searchBox" placeholder="Search transactions..." class="search-box" />
-        <button id="exportPdfBtn" class="btn btn-quiet">Export PDF</button>
-      </div>
-      <div id="txnList" class="ledger-rows"></div>
-    </section>
-
     <section class="manage">
       <details>
         <summary>Manage categories</summary>
@@ -56,6 +43,51 @@
           <button type="submit" class="btn btn-quiet">Add category</button>
         </form>
       </details>
+    </section>
+
+    <section class="filters">
+      <details>
+        <summary>Advanced filters</summary>
+        <div class="filters-grid">
+          <label>From<input type="date" id="filterDateFrom" /></label>
+          <label>To<input type="date" id="filterDateTo" /></label>
+          <label>Type
+            <select id="filterType">
+              <option value="">All</option>
+              <option value="withdrawal">Withdrawals only</option>
+              <option value="deposit">Deposits only</option>
+            </select>
+          </label>
+          <label>Min amount<input type="number" id="filterMinAmount" step="0.01" min="0" placeholder="0.00" /></label>
+          <label>Max amount<input type="number" id="filterMaxAmount" step="0.01" min="0" placeholder="No limit" /></label>
+          <label>Account
+            <select id="filterAccount"><option value="">All accounts</option></select>
+          </label>
+          <button type="button" id="clearAdvancedFilters" class="btn btn-quiet">Clear filters</button>
+        </div>
+        <p class="filter-note">A date range here overrides the month picker above (search always overrides both).</p>
+      </details>
+    </section>
+
+    <section class="summary" id="summarySection">
+      <h2>Budget vs. actual</h2>
+      <div id="summaryList" class="ledger-rows"></div>
+    </section>
+
+    <section class="chart-section">
+      <details id="chartDetails">
+        <summary>Spending breakdown chart</summary>
+        <canvas id="spendingChart" height="280"></canvas>
+      </details>
+    </section>
+
+    <section class="transactions">
+      <div class="section-header">
+        <h2>Transactions</h2>
+        <input type="text" id="searchBox" placeholder="Search transactions..." class="search-box" />
+        <button id="exportPdfBtn" class="btn btn-quiet">Export PDF</button>
+      </div>
+      <div id="txnList" class="ledger-rows"></div>
     </section>
   </main>
 
