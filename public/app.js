@@ -62,10 +62,25 @@ function monthName(m) {
   });
 }
 
-function populateMonthPicker() {
+async function populateMonthPicker() {
   const now = new Date();
+  let monthsBack = 6; // fallback if there's no data yet
+
+  try {
+    const res = await fetch("/api/date-range");
+    const { earliest } = await res.json();
+    if (earliest) {
+      const [ey, em] = earliest.split("-").map(Number);
+      monthsBack =
+        (now.getUTCFullYear() - ey) * 12 + (now.getUTCMonth() + 1 - em) + 1;
+      monthsBack = Math.max(1, Math.min(monthsBack, 36)); // sane cap either direction
+    }
+  } catch {
+    // fall back to 6 months if this fails for any reason
+  }
+
   monthPicker.innerHTML = "";
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < monthsBack; i++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     const val = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     const opt = document.createElement("option");
@@ -714,8 +729,7 @@ document.getElementById("connectBtn").addEventListener("click", async () => {
   handler.open();
 });
 
-populateMonthPicker();
-refresh();
+populateMonthPicker().then(refresh);
 
 async function exportPdf() {
   showStatus("Generating PDF...", 10000);
