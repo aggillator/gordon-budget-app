@@ -68,37 +68,49 @@
       </details>
     </section>
 
-    <section class="csv-import">
-      <details>
-        <summary>Import bank CSV</summary>
-        <p class="filter-note">
-          Upload a CSV export from your bank or credit card. Pick which account it belongs to, map the
-          date/description/amount columns, and the transactions will be added the same way a Plaid sync
-          would - safe to re-upload the same file, duplicates are merged automatically.
-        </p>
-        <label>Account
-          <select id="csvAccountSelect"></select>
-        </label>
-        <input type="file" id="csvFileInput" accept=".csv" />
-        <div id="csvMappingArea" class="filters-grid" hidden>
-          <label>Date column
-            <select id="csvDateCol"></select>
-          </label>
-          <label>Description column
-            <select id="csvDescCol"></select>
-          </label>
-          <label>Amount column
-            <select id="csvAmountCol"></select>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="csvFlipSign" />
-            Flip amount sign (my CSV uses negative for spending)
-          </label>
-          <button type="button" id="csvImportBtn" class="btn btn-quiet">Import transactions</button>
-        </div>
-      </details>
-    </section>
-
+  <section class="csv-import">
+  <details>
+    <summary>Import bank CSV</summary>
+    <p class="filter-note">
+      Upload a CSV export from your bank or credit card. Pick which account it belongs to, map the
+      columns below, and the transactions will be added the same way a Plaid sync would - safe to
+      re-upload the same file, duplicates are merged automatically.
+    </p>
+    <label>Account
+      <select id="csvAccountSelect"></select>
+    </label>
+    <input type="file" id="csvFileInput" accept=".csv" />
+    <div id="csvMappingArea" class="filters-grid" hidden>
+      <label>Date column
+        <select id="csvDateCol"></select>
+      </label>
+      <label>Description column
+        <select id="csvDescCol"></select>
+      </label>
+      <label>Amount format
+        <select id="csvAmountMode">
+          <option value="single">Single amount column (signed)</option>
+          <option value="split">Separate withdrawal + deposit columns</option>
+        </select>
+      </label>
+      <label id="csvAmountSingleWrap">Amount column
+        <select id="csvAmountCol"></select>
+      </label>
+      <label class="checkbox-label" id="csvFlipWrap">
+        <input type="checkbox" id="csvFlipSign" />
+        Flip amount sign (my CSV uses negative for spending)
+      </label>
+      <label id="csvWithdrawalWrap" hidden>Withdrawal column
+        <select id="csvWithdrawalCol"></select>
+      </label>
+      <label id="csvDepositWrap" hidden>Deposit column
+        <select id="csvDepositCol"></select>
+      </label>
+      <button type="button" id="csvImportBtn" class="btn btn-quiet">Import transactions</button>
+    </div>
+  </details>
+</section>
+    
     <section class="filters">
       <details>
         <summary>Advanced filters</summary>
