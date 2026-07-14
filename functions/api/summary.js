@@ -6,7 +6,10 @@ export async function onRequestGet({ request, env }) {
   const [y, mo] = month.split("-").map(Number);
   const nextMonth = `${mo === 12 ? y + 1 : y}-${String(mo === 12 ? 1 : mo + 1).padStart(2, "0")}`;
 
-  const categories = await sb(env, "categories?select=*&order=sort_order.asc");
+  const categories = await sb(
+    env,
+    "categories?select=*&exclude_from_budget=eq.false&order=sort_order.asc"
+  );
   const txns = await sb(
     env,
     `transactions?select=amount,category_id&date=gte.${month}-01&date=lt.${nextMonth}-01`

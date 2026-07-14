@@ -268,3 +268,24 @@ h2 {
 
 .add-category-form input[type="text"] { flex: 1; min-width: 160px; }
 .add-category-form input[type="number"] { width: 140px; }
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  width: 100%;
+}
+
+.checkbox-label input { width: auto; }
+
+.excluded-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--over);
+  border: 1px solid var(--over);
+  border-radius: 2px;
+  padding: 1px 5px;
+}

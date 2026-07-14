@@ -44,7 +44,11 @@
         <div id="categoryManageList" class="ledger-rows"></div>
         <form id="addCategoryForm" class="add-category-form">
           <input type="text" id="newCatName" placeholder="Category name" required />
-          <input type="number" id="newCatBudget" placeholder="Monthly budget" step="0.01" min="0" required />
+          <input type="number" id="newCatBudget" placeholder="Monthly budget" step="0.01" min="0" />
+          <label class="checkbox-label">
+            <input type="checkbox" id="newCatExclude" />
+            Not a budget category (income, Maaser, transfers, etc.)
+          </label>
           <button type="submit" class="btn btn-quiet">Add category</button>
         </form>
       </details>

@@ -8,6 +8,7 @@ const statusBar = document.getElementById("statusBar");
 const categoryManageList = document.getElementById("categoryManageList");
 
 let categories = [];
+const NEW_CATEGORY_VALUE = "__new__";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
@@ -80,13 +81,22 @@ function populateCategoryFilter() {
   categoryFilter.value = current || "";
 }
 
+function categoryOptionsHtml(selectedId) {
+  return categories
+    .map(
+      (c) =>
+        `<option value="${c.id}" ${c.id === selectedId ? "selected" : ""}>${c.name}</option>`
+    )
+    .join("");
+}
+
 function renderCategoryManage() {
   categoryManageList.innerHTML = categories
     .map(
       (c) => `
     <div class="manage-row">
-      <span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</span>
-      <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" />
+      <span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""} ${c.exclude_from_budget ? '<span class="excluded-badge">NOT IN BUDGET</span>' : ""}</span>
+      <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
     </div>`
     )
     .join("");
@@ -114,6 +124,35 @@ async function loadCategories() {
   renderCategoryManage();
 }
 
+// Creates a category via the API and returns its id. Used by both the
+// bottom "Manage categories" form and the inline quick-add in each
+// transaction row, so both stay in sync with the same logic.
+async function createCategory({ name, monthly_budget = 0, exclude_from_budget = false }) {
+  const res = await fetch("/api/categories", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, monthly_budget, exclude_from_budget }),
+  });
+  const created = await res.json();
+  await loadCategories();
+  return created.id;
+}
+
+async function setTransactionCategory(txnId, categoryId) {
+  const res = await fetch("/api/transactions", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: txnId, category_id: categoryId || null }),
+  });
+  const data = await res.json();
+  showStatus(
+    data.propagated
+      ? `Category updated - applied to ${data.propagated} similar transaction${data.propagated === 1 ? "" : "s"}`
+      : "Category updated"
+  );
+  refresh();
+}
+
 async function loadTransactions(month) {
   const params = new URLSearchParams();
   const search = searchBox.value.trim();
@@ -138,12 +177,6 @@ async function loadTransactions(month) {
   for (const t of rows) {
     const row = document.createElement("div");
     row.className = "txn-row";
-    const options = categories
-      .map(
-        (c) =>
-          `<option value="${c.id}" ${c.id === t.category_id ? "selected" : ""}>${c.name}</option>`
-      )
-      .join("");
     const sourceName = t.accounts?.name || "Unknown account";
     row.innerHTML = `
       <div class="txn-date">${t.date}</div>
@@ -154,22 +187,28 @@ async function loadTransactions(month) {
       <div class="txn-amount">${fmt(t.amount)}</div>
       <select data-id="${t.id}">
         <option value="">- uncategorized -</option>
-        ${options}
+        ${categoryOptionsHtml(t.category_id)}
+        <option value="${NEW_CATEGORY_VALUE}">+ New category...</option>
       </select>
     `;
     row.querySelector("select").addEventListener("change", async (e) => {
-      const res = await fetch("/api/transactions", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: t.id, category_id: e.target.value || null }),
-      });
-      const data = await res.json();
-      showStatus(
-        data.propagated
-          ? `Category updated - applied to ${data.propagated} similar transaction${data.propagated === 1 ? "" : "s"}`
-          : "Category updated"
-      );
-      refresh();
+      if (e.target.value === NEW_CATEGORY_VALUE) {
+        const name = prompt("New category name:");
+        if (!name || !name.trim()) {
+          e.target.value = t.category_id || "";
+          return;
+        }
+        const exclude = confirm(
+          'Click OK if this is a normal budget category.\nClick Cancel if it should NOT count toward the budget (income, Maaser, transfers, etc).'
+        );
+        const newId = await createCategory({
+          name: name.trim(),
+          exclude_from_budget: !exclude,
+        });
+        await setTransactionCategory(t.id, newId);
+        return;
+      }
+      await setTransactionCategory(t.id, e.target.value);
     });
     txnList.appendChild(row);
   }
@@ -196,15 +235,12 @@ document.getElementById("addCategoryForm").addEventListener("submit", async (e) 
   e.preventDefault();
   const name = document.getElementById("newCatName").value.trim();
   const monthly_budget = parseFloat(document.getElementById("newCatBudget").value) || 0;
+  const exclude_from_budget = document.getElementById("newCatExclude").checked;
   if (!name) return;
-  await fetch("/api/categories", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, monthly_budget }),
-  });
+  await createCategory({ name, monthly_budget, exclude_from_budget });
   document.getElementById("newCatName").value = "";
   document.getElementById("newCatBudget").value = "";
-  await loadCategories();
+  document.getElementById("newCatExclude").checked = false;
   loadSummary(monthPicker.value);
   showStatus(`Added category "${name}"`);
 });

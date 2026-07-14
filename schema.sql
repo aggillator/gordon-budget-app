@@ -26,6 +26,7 @@ create table if not exists categories (
   name text unique not null,
   monthly_budget numeric(10,2) not null default 0,
   is_fixed boolean default false,       -- true = fixed bill (rent, tuition), false = variable/discretionary
+  exclude_from_budget boolean default false, -- true = tracked but not counted (income, Maaser, transfers)
   sort_order int default 0
 );
 
@@ -51,6 +52,26 @@ create table if not exists transactions (
 
 create index if not exists idx_transactions_date on transactions(date);
 create index if not exists idx_transactions_category on transactions(category_id);
+
+-- Once a transaction is manually categorized, nothing (sync, AI, keyword
+-- rules) is ever allowed to silently change it back - this is enforced here
+-- at the database level so it holds regardless of which code path touches
+-- the row, now or in the future.
+create or replace function protect_manual_category()
+returns trigger as $$
+begin
+  if OLD.category_source = 'manual' and NEW.category_source is distinct from 'manual' then
+    NEW.category_id := OLD.category_id;
+    NEW.category_source := OLD.category_source;
+  end if;
+  return NEW;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_protect_manual_category on transactions;
+create trigger trg_protect_manual_category
+before update on transactions
+for each row execute function protect_manual_category();
 
 -- Seed categories (broad spending types, not specific merchants/brands -
 -- edit amounts any time in the app)
