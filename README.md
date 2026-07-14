@@ -61,6 +61,18 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Advanced filters**: collapsible panel with date range (overrides the month picker when set), deposits-only/withdrawals-only, min/max amount, and which connected account. All combine with the category filter and search. Whatever's active also applies to the PDF export, so what you see is what you get.
 - **Spending breakdown chart**: collapsible pie chart of the selected month's actual spend by category. Opens lazily (only renders when you expand it) and updates when you change the month while it's open.
 - **Manage categories moved to the top** of the page, still collapsed by default so it stays out of the way until you need it.
+- **Connected accounts panel**: lists every linked institution with its account names and transaction count, and a Disconnect button per institution. Disconnecting revokes Plaid's access token (stops billing/syncing on Plaid's side) and permanently deletes that account's transaction history from Supabase. This does NOT free up a Trial-plan Item slot - Plaid counts every Item ever created, removed or not.
+
+## Backfilling more than 90 days of history
+
+Plaid defaults to 90 days of history for a newly linked account, unless `days_requested` is set - which `create-link-token.js` now does (730 days / 2 years). This can't be applied retroactively to an already-linked account; Plaid requires removing and re-linking it. To backfill an existing account:
+
+1. Open "Connected accounts" → Disconnect the institution you want more history for
+2. Click "Connect a bank" and re-link that same institution - it'll now request 2 years of history
+3. Hit Sync
+4. Repeat for each account you want backfilled
+
+Each re-link uses a new Trial-plan Item slot (10 total, non-renewable even after disconnecting) - worth doing deliberately rather than for every account reflexively if you're close to the limit.
 
 ## What's not built yet (intentionally left for a v2)
 

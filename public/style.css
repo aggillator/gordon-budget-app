@@ -328,6 +328,53 @@ h2 {
   max-height: 320px;
 }
 
+.connected-accounts details {
+  border-top: 1px solid var(--paper-line);
+  padding-top: 14px;
+}
+
+.connected-accounts summary {
+  cursor: pointer;
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.connected-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.connected-item .inst-name {
+  font-weight: 500;
+}
+
+.connected-item .inst-accounts {
+  font-size: 12px;
+  color: var(--ink-soft);
+  grid-column: 1 / -1;
+}
+
+.disconnect-btn {
+  background: transparent;
+  border: 1px solid var(--over);
+  border-radius: 3px;
+  color: var(--over);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  height: fit-content;
+}
+
+.disconnect-btn:hover {
+  background: var(--over);
+  color: var(--paper);
+}
+
 .manage-row {
   display: grid;
   grid-template-columns: 1fr 160px 120px 60px 32px;

@@ -288,7 +288,54 @@ function renderCategoryManage() {
   });
 }
 
-async function loadCategories() {
+async function loadConnectedAccounts() {
+  const res = await fetch("/api/plaid-items");
+  const items = await res.json();
+  const list = document.getElementById("connectedAccountsList");
+
+  if (!items.length) {
+    list.innerHTML = `<p class="empty">No banks connected yet.</p>`;
+    return;
+  }
+
+  list.innerHTML = items
+    .map((it) => {
+      const accountsStr = it.accounts
+        .map((a) => `${a.name}${a.mask ? ` (...${a.mask})` : ""}`)
+        .join(", ");
+      return `
+    <div class="connected-item">
+      <div class="inst-name">${escapeAttr(it.institution_name)}</div>
+      <button type="button" class="disconnect-btn" data-id="${it.id}" data-name="${escapeAttr(it.institution_name)}" data-count="${it.txn_count}">
+        Disconnect
+      </button>
+      <div class="inst-accounts">${accountsStr || "No accounts"} - ${it.txn_count} transaction${it.txn_count === 1 ? "" : "s"}</div>
+    </div>`;
+    })
+    .join("");
+
+  list.querySelectorAll(".disconnect-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const { id, name, count } = e.target.dataset;
+      if (
+        !confirm(
+          `Disconnect "${name}"?\n\nThis will revoke Plaid's access and permanently delete all ${count} transaction${count === "1" ? "" : "s"} for this account from your database. This does NOT free up a Trial-plan Item slot - if you reconnect the same bank later, it uses a new slot.\n\nThis cannot be undone. Continue?`
+        )
+      ) {
+        return;
+      }
+      showStatus(`Disconnecting ${name}...`, 15000);
+      const res = await fetch(`/api/plaid-items?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(`Failed to disconnect: ${data.error || "unknown error"}`, 6000);
+        return;
+      }
+      showStatus(`Disconnected ${data.institution_name}`);
+      refresh();
+    });
+  });
+}
   const res = await fetch("/api/categories");
   categories = await res.json();
   populateCategoryFilter();
@@ -449,6 +496,7 @@ async function refresh() {
   monthLabel.textContent = monthName(month);
   await loadCategories();
   await loadAccounts();
+  await loadConnectedAccounts();
   await loadSummary(month);
   await loadTransactions(month);
 }
