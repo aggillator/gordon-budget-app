@@ -81,6 +81,21 @@
       <div id="summaryList" class="ledger-rows"></div>
     </section>
 
+    <section class="insights">
+      <details id="insightsDetails">
+        <summary>Spending averages</summary>
+        <p class="filter-note" id="insightsNote"></p>
+        <div class="insights-header">
+          <span data-sort="name">Category</span>
+          <span data-sort="average">Avg/month</span>
+          <span data-sort="min">Lowest month</span>
+          <span data-sort="max">Highest month</span>
+          <span data-sort="budget">Budget</span>
+        </div>
+        <div id="insightsTable" class="ledger-rows"></div>
+      </details>
+    </section>
+
     <section class="chart-section">
       <details id="chartDetails">
         <summary>Spending breakdown chart</summary>
@@ -91,6 +106,12 @@
     <section class="transactions">
       <div class="section-header">
         <h2>Transactions</h2>
+        <select id="txnSort">
+          <option value="date-desc">Newest first</option>
+          <option value="date-asc">Oldest first</option>
+          <option value="amount-desc">Amount: high to low</option>
+          <option value="amount-asc">Amount: low to high</option>
+        </select>
         <input type="text" id="searchBox" placeholder="Search transactions..." class="search-box" />
         <button id="exportPdfBtn" class="btn btn-quiet">Export PDF</button>
       </div>

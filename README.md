@@ -62,6 +62,8 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Spending breakdown chart**: collapsible pie chart of the selected month's actual spend by category. Opens lazily (only renders when you expand it) and updates when you change the month while it's open.
 - **Manage categories moved to the top** of the page, still collapsed by default so it stays out of the way until you need it.
 - **Connected accounts panel**: lists every linked institution with its account names and transaction count, and a Disconnect button per institution. Disconnecting revokes Plaid's access token (stops billing/syncing on Plaid's side) and permanently deletes that account's transaction history from Supabase. This does NOT free up a Trial-plan Item slot - Plaid counts every Item ever created, removed or not.
+- **Spending averages**: collapsible table of average monthly spend per category, computed across your full transaction history (total spend ÷ number of calendar months tracked, so a category you don't hit every month still averages correctly). Also shows the lowest and highest single month for each category. Click any column header to sort by it, click again to flip direction.
+- **Sort transactions**: dropdown next to the search box - newest/oldest first, or highest/lowest amount first.
 
 ## Backfilling more than 90 days of history
 

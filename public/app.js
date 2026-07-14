@@ -288,6 +288,65 @@ function renderCategoryManage() {
   });
 }
 
+let insightsSortKey = "average";
+let insightsSortDir = "desc";
+
+async function loadInsights() {
+  const res = await fetch("/api/insights");
+  const { months_tracked, categories: rows } = await res.json();
+
+  document.getElementById("insightsNote").textContent = months_tracked
+    ? `Based on ${months_tracked} month${months_tracked === 1 ? "" : "s"} of transaction history.`
+    : "Not enough history yet to compute averages.";
+
+  const sorted = [...rows].sort((a, b) => {
+    const dir = insightsSortDir === "asc" ? 1 : -1;
+    if (insightsSortKey === "name") return a.name.localeCompare(b.name) * dir;
+    return (a[insightsSortKey] - b[insightsSortKey]) * dir;
+  });
+
+  document.querySelectorAll(".insights-header span").forEach((el) => {
+    el.classList.toggle("sort-active", el.dataset.sort === insightsSortKey);
+  });
+
+  const table = document.getElementById("insightsTable");
+  if (!sorted.length) {
+    table.innerHTML = `<p class="empty">No spending history yet.</p>`;
+    return;
+  }
+
+  table.innerHTML = sorted
+    .map((c) => {
+      const overAvg = c.budget > 0 && c.average > c.budget;
+      return `
+    <div class="insight-row">
+      <span class="insight-name">${c.name}</span>
+      <span class="${overAvg ? "over-budget" : ""}">${fmt(c.average)}</span>
+      <span>${fmt(c.min)}</span>
+      <span>${fmt(c.max)}</span>
+      <span>${fmt(c.budget)}</span>
+    </div>`;
+    })
+    .join("");
+}
+
+document.querySelectorAll(".insights-header span").forEach((el) => {
+  el.addEventListener("click", () => {
+    const key = el.dataset.sort;
+    if (insightsSortKey === key) {
+      insightsSortDir = insightsSortDir === "asc" ? "desc" : "asc";
+    } else {
+      insightsSortKey = key;
+      insightsSortDir = "desc";
+    }
+    loadInsights();
+  });
+});
+
+document.getElementById("insightsDetails").addEventListener("toggle", (e) => {
+  if (e.target.open) loadInsights();
+});
+
 async function loadConnectedAccounts() {
   const res = await fetch("/api/plaid-items");
   const items = await res.json();
@@ -419,8 +478,18 @@ async function fetchFilteredTransactions(month) {
   return applyClientFilters(rows);
 }
 
+function applySort(rows) {
+  const [key, dir] = document.getElementById("txnSort").value.split("-");
+  const sorted = [...rows].sort((a, b) => {
+    const diff = key === "amount" ? Math.abs(a.amount) - Math.abs(b.amount) : new Date(a.date) - new Date(b.date);
+    return dir === "asc" ? diff : -diff;
+  });
+  return sorted;
+}
+
 async function loadTransactions(month) {
-  const rows = await fetchFilteredTransactions(month);
+  let rows = await fetchFilteredTransactions(month);
+  rows = applySort(rows);
   txnList.innerHTML = "";
 
   if (!rows.length) {
@@ -501,6 +570,7 @@ async function refresh() {
   await loadConnectedAccounts();
   await loadSummary(month);
   await loadTransactions(month);
+  if (document.getElementById("insightsDetails").open) loadInsights();
 }
 
 monthPicker.addEventListener("change", refresh);
@@ -519,6 +589,8 @@ searchBox.addEventListener("input", () => {
 [filterDateFrom, filterDateTo, filterType, filterAccount].forEach((el) =>
   el.addEventListener("change", () => loadTransactions(monthPicker.value))
 );
+
+document.getElementById("txnSort").addEventListener("change", () => loadTransactions(monthPicker.value));
 
 let amountDebounce;
 [filterMinAmount, filterMaxAmount].forEach((el) =>
