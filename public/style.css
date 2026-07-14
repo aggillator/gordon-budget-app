@@ -420,6 +420,28 @@ h2 {
 
 .insight-row .over-budget { color: var(--over); }
 
+.amazon-import details {
+  border-top: 1px solid var(--paper-line);
+  padding-top: 14px;
+}
+
+.amazon-import summary {
+  cursor: pointer;
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.amazon-import input[type="file"] {
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+#matchAmazonBtn {
+  margin-top: 10px;
+}
+
 .disconnect-btn {
   background: transparent;
   border: 1px solid var(--over);

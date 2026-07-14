@@ -1,11 +1,10 @@
 import { json, plaid, sb, suggestCategory } from "../_utils.js";
 
-// Bulk-upserts new transactions in a single Supabase call instead of one
-// call per row, so subrequests stay far under Cloudflare's 50/invocation cap
-// even for a large first-time history pull.
-// "modified" and "removed" transactions are handled individually since they
-// need per-row PATCH/DELETE — but those lists are normally tiny compared to
-// "added", so this stays well within budget.
+// Bulk-handles added, modified, AND removed transactions - one or two
+// requests per item instead of one request per row - so subrequests stay
+// far under Cloudflare's 50/invocation cap even on a large first-time
+// history pull (e.g. 2 years, which can include hundreds of pending->posted
+// transitions showing up as "modified" on the very first sync page).
 const BATCH_SIZE = 100;
 
 export async function onRequestPost({ env }) {
@@ -28,13 +27,13 @@ export async function onRequestPost({ env }) {
         count: BATCH_SIZE,
       });
 
-      // Build rows for a single bulk upsert instead of N individual calls
-      const rows = [];
+      // New transactions: full row, including a fresh category suggestion.
+      const addedRows = [];
       for (const t of page.added) {
         const account = accounts.find((a) => a.plaid_account_id === t.account_id);
         if (!account) continue;
         const category_id = suggestCategory(rules, t);
-        rows.push({
+        addedRows.push({
           plaid_transaction_id: t.transaction_id,
           account_id: account.id,
           date: t.date,
@@ -46,31 +45,48 @@ export async function onRequestPost({ env }) {
           category_source: category_id ? "auto" : "unassigned",
         });
       }
-
-      if (rows.length) {
+      if (addedRows.length) {
         await sb(env, "transactions?on_conflict=plaid_transaction_id", {
           method: "POST",
           prefer: "resolution=merge-duplicates",
-          body: rows,
+          body: addedRows,
         });
-        added += rows.length;
+        added += addedRows.length;
       }
 
-      // Modified/removed handled per-row — normally a short list, and we
-      // deliberately don't touch category_id here so manual overrides survive.
+      // Modified transactions (e.g. pending -> posted): refresh only the raw
+      // bank fields. category_id/category_source are deliberately omitted so
+      // existing categorization - manual, AI, or rule-based - always survives.
+      const modifiedRows = [];
       for (const t of page.modified) {
-        await sb(env, `transactions?plaid_transaction_id=eq.${t.transaction_id}`, {
-          method: "PATCH",
-          body: { amount: t.amount, pending: t.pending, name: t.name },
+        const account = accounts.find((a) => a.plaid_account_id === t.account_id);
+        if (!account) continue;
+        modifiedRows.push({
+          plaid_transaction_id: t.transaction_id,
+          account_id: account.id,
+          date: t.date,
+          name: t.name,
+          merchant_name: t.merchant_name,
+          amount: t.amount,
+          pending: t.pending,
         });
-        modified++;
+      }
+      if (modifiedRows.length) {
+        await sb(env, "transactions?on_conflict=plaid_transaction_id", {
+          method: "POST",
+          prefer: "resolution=merge-duplicates",
+          body: modifiedRows,
+        });
+        modified += modifiedRows.length;
       }
 
-      for (const t of page.removed) {
-        await sb(env, `transactions?plaid_transaction_id=eq.${t.transaction_id}`, {
+      // Removed transactions: one bulk DELETE instead of one per row.
+      if (page.removed.length) {
+        const ids = page.removed.map((t) => encodeURIComponent(t.transaction_id));
+        await sb(env, `transactions?plaid_transaction_id=in.(${ids.join(",")})`, {
           method: "DELETE",
         });
-        removed++;
+        removed += page.removed.length;
       }
 
       await sb(env, `plaid_items?id=eq.${item.id}`, {

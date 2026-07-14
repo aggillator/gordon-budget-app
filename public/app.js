@@ -303,6 +303,127 @@ function renderCategoryManage() {
   });
 }
 
+let amazonRows = [];
+let amazonHeaders = [];
+
+document.getElementById("amazonFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (results) => {
+      amazonRows = results.data;
+      amazonHeaders = results.meta.fields || [];
+      populateAmazonMapping();
+    },
+    error: (err) => showStatus(`Couldn't read CSV: ${err.message}`, 6000),
+  });
+});
+
+function guessColumn(headers, candidates) {
+  const norm = (h) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const cand of candidates) {
+    const match = headers.find((h) => norm(h) === cand);
+    if (match) return match;
+  }
+  for (const cand of candidates) {
+    const match = headers.find((h) => norm(h).includes(cand));
+    if (match) return match;
+  }
+  return "";
+}
+
+function populateAmazonMapping() {
+  const dateGuess = guessColumn(amazonHeaders, ["orderdate", "shipmentdate", "date"]);
+  const titleGuess = guessColumn(amazonHeaders, ["title", "productname", "itemname", "description"]);
+  const amountGuess = guessColumn(amazonHeaders, [
+    "itemtotal", "totalowed", "itemsubtotal", "amount", "total",
+  ]);
+  const orderIdGuess = guessColumn(amazonHeaders, ["orderid", "orderno", "orderno."]);
+
+  const opts = (selected) =>
+    `<option value="">-- none --</option>` +
+    amazonHeaders
+      .map((h) => `<option value="${escapeAttr(h)}" ${h === selected ? "selected" : ""}>${escapeAttr(h)}</option>`)
+      .join("");
+
+  document.getElementById("amazonMappingSection").innerHTML = `
+    <label>Order date column<select id="mapDate">${opts(dateGuess)}</select></label>
+    <label>Item title column<select id="mapTitle">${opts(titleGuess)}</select></label>
+    <label>Amount column<select id="mapAmount">${opts(amountGuess)}</select></label>
+    <label>Order ID column (optional, groups multi-item orders)<select id="mapOrderId">${opts(orderIdGuess)}</select></label>
+  `;
+  document.getElementById("amazonMappingSection").hidden = false;
+  document.getElementById("amazonPreviewNote").textContent =
+    `${amazonRows.length} rows loaded. Check the column mapping below looks right before matching.`;
+  document.getElementById("matchAmazonBtn").hidden = false;
+}
+
+function normalizeAmazonDate(raw) {
+  const d = new Date(raw);
+  if (isNaN(d)) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+document.getElementById("matchAmazonBtn").addEventListener("click", async () => {
+  const dateCol = document.getElementById("mapDate").value;
+  const titleCol = document.getElementById("mapTitle").value;
+  const amountCol = document.getElementById("mapAmount").value;
+  const orderIdCol = document.getElementById("mapOrderId").value;
+
+  if (!dateCol || !titleCol || !amountCol) {
+    showStatus("Please map at least date, title, and amount columns", 5000);
+    return;
+  }
+
+  const groups = {};
+  amazonRows.forEach((row, i) => {
+    const key = orderIdCol ? row[orderIdCol] : `row-${i}`;
+    if (!groups[key]) groups[key] = { date: row[dateCol], titles: [], amount: 0 };
+    const amt = parseFloat(String(row[amountCol]).replace(/[^0-9.-]/g, "")) || 0;
+    groups[key].titles.push(row[titleCol]);
+    groups[key].amount += amt;
+  });
+
+  const allOrders = Object.values(groups)
+    .map((g) => ({
+      date: normalizeAmazonDate(g.date),
+      title: g.titles.filter(Boolean).join(", ").slice(0, 200),
+      amount: Number(g.amount.toFixed(2)),
+    }))
+    .filter((o) => o.date && o.amount > 0);
+
+  if (!allOrders.length) {
+    showStatus("No valid orders found with that column mapping", 5000);
+    return;
+  }
+
+  // Sent in small batches - the endpoint fetches candidate transactions once
+  // per call, so keeping batches modest avoids Cloudflare's subrequest cap.
+  const CHUNK = 30;
+  let totalMatched = 0;
+
+  for (let i = 0; i < allOrders.length; i += CHUNK) {
+    const chunk = allOrders.slice(i, i + CHUNK);
+    showStatus(`Matching orders... (${totalMatched} matched so far)`, 20000);
+    const res = await fetch("/api/import-amazon", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orders: chunk }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus(`Import failed: ${data.error}`, 6000);
+      return;
+    }
+    totalMatched += data.matched;
+  }
+
+  showStatus(`Matched ${totalMatched} of ${allOrders.length} orders to transactions`, 8000);
+  refresh();
+});
+
 let insightsSortKey = "average";
 let insightsSortDir = "desc";
 

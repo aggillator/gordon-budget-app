@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body>
   <header class="masthead">
@@ -49,6 +50,21 @@
       <details>
         <summary>Connected accounts</summary>
         <div id="connectedAccountsList" class="ledger-rows"></div>
+      </details>
+    </section>
+
+    <section class="amazon-import">
+      <details>
+        <summary>Import Amazon order history</summary>
+        <p class="filter-note">
+          Upload a CSV export of your Amazon order history. Item titles get matched to your existing
+          Amazon transactions by amount + date and applied as the transaction name - your bank data
+          isn't changed, just how it displays. Never overwrites a transaction you've already renamed.
+        </p>
+        <input type="file" id="amazonFile" accept=".csv" />
+        <p class="filter-note" id="amazonPreviewNote"></p>
+        <div id="amazonMappingSection" class="filters-grid" hidden></div>
+        <button type="button" id="matchAmazonBtn" class="btn btn-quiet" hidden>Match to transactions</button>
       </details>
     </section>
 

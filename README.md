@@ -64,6 +64,7 @@ This app will hold live bank transaction data with no login screen built in. Bef
 - **Connected accounts panel**: lists every linked institution with its account names and transaction count, and a Disconnect button per institution. Disconnecting revokes Plaid's access token (stops billing/syncing on Plaid's side) and permanently deletes that account's transaction history from Supabase. This does NOT free up a Trial-plan Item slot - Plaid counts every Item ever created, removed or not.
 - **Spending averages**: collapsible table of average monthly spend per category, computed across your full transaction history (total spend ÷ number of calendar months tracked, so a category you don't hit every month still averages correctly). Also shows the lowest and highest single month for each category. Click any column header to sort by it, click again to flip direction.
 - **Sort transactions**: dropdown next to the search box - newest/oldest first, or highest/lowest amount first.
+- **Amazon order import**: upload a CSV export of your Amazon order history and it matches item titles to your existing Amazon transactions by amount + date, renaming them via the same `custom_name` field used elsewhere. Column names in Amazon's export have changed over the years, so there's a mapping step - it guesses which CSV column is date/title/amount/order-ID and lets you correct it if the guess is wrong. Never overwrites a transaction you've already renamed (manually or from a prior import).
 
 ## Backfilling more than 90 days of history
 
