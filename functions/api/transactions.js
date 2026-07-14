@@ -19,21 +19,29 @@ export async function onRequestGet({ request, env }) {
   }
   if (search && search.trim()) {
     const pattern = `*${encodeURIComponent(search.trim())}*`;
-    path += `&or=(merchant_name.ilike.${pattern},name.ilike.${pattern})`;
+    path += `&or=(merchant_name.ilike.${pattern},name.ilike.${pattern},custom_name.ilike.${pattern})`;
   }
 
   const rows = await sb(env, path);
   return json(rows);
 }
 
-// Setting a category by hand does three things:
-// 1. Updates this transaction (marked "manual" so nothing else overwrites it)
-// 2. Saves/updates a keyword rule so future syncs auto-categorize the same merchant
-// 3. Immediately applies the category to every other transaction from that
-//    merchant that isn't already manually categorized
+// Two different kinds of edit come through here:
+// - category_id present: the category-change flow (marks manual, saves a
+//   rule, propagates to similar transactions - see below)
+// - custom_name present: just renaming the transaction for display, no
+//   propagation, doesn't touch category at all
 export async function onRequestPatch({ request, env }) {
-  const { id, category_id } = await request.json();
+  const { id, category_id, custom_name } = await request.json();
   if (!id) return json({ error: "id required" }, 400);
+
+  if (custom_name !== undefined) {
+    await sb(env, `transactions?id=eq.${id}`, {
+      method: "PATCH",
+      body: { custom_name: custom_name || null },
+    });
+    return json({ ok: true });
+  }
 
   const [txn] = await sb(env, `transactions?id=eq.${id}&select=merchant_name,name`);
 

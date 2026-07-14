@@ -1,6 +1,7 @@
 const monthLabel = document.getElementById("monthLabel");
 const monthPicker = document.getElementById("monthPicker");
 const categoryFilter = document.getElementById("categoryFilter");
+const clearFilterBtn = document.getElementById("clearFilterBtn");
 const searchBox = document.getElementById("searchBox");
 const summaryList = document.getElementById("summaryList");
 const txnList = document.getElementById("txnList");
@@ -16,6 +17,14 @@ function currentMonth() {
 
 function fmt(n) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function escapeAttr(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function monthName(m) {
@@ -47,6 +56,10 @@ function showStatus(msg, ms = 3000) {
   setTimeout(() => (statusBar.hidden = true), ms);
 }
 
+function sortedCategoriesAlpha() {
+  return [...categories].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function loadSummary(month) {
   const res = await fetch(`/api/summary?month=${month}`);
   const { summary } = await res.json();
@@ -60,8 +73,11 @@ async function loadSummary(month) {
   for (const c of summary) {
     const pct = c.budget > 0 ? Math.min(100, (c.actual / c.budget) * 100) : c.actual > 0 ? 100 : 0;
     const over = c.actual > c.budget && c.budget > 0;
+    const active = categoryFilter.value === c.id;
     const row = document.createElement("div");
-    row.className = "cat-row";
+    row.className = `cat-row${active ? " cat-row-active" : ""}`;
+    row.dataset.id = c.id;
+    row.title = "Click to filter transactions by this category";
     row.innerHTML = `
       <div class="cat-name">${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</div>
       <div class="cat-figures">
@@ -69,6 +85,11 @@ async function loadSummary(month) {
       </div>
       <div class="bar-track"><div class="bar-fill ${over ? "over" : "under"}" style="width:${pct}%"></div></div>
     `;
+    row.addEventListener("click", () => {
+      categoryFilter.value = c.id;
+      onFilterChange();
+      document.querySelector(".transactions").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     summaryList.appendChild(row);
   }
 }
@@ -77,12 +98,25 @@ function populateCategoryFilter() {
   const current = categoryFilter.value;
   categoryFilter.innerHTML =
     `<option value="">All categories</option><option value="unassigned">Unassigned</option>` +
-    categories.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+    sortedCategoriesAlpha()
+      .map((c) => `<option value="${c.id}">${c.name}</option>`)
+      .join("");
   categoryFilter.value = current || "";
+  updateClearFilterVisibility();
+}
+
+function updateClearFilterVisibility() {
+  clearFilterBtn.hidden = !categoryFilter.value;
+}
+
+function onFilterChange() {
+  updateClearFilterVisibility();
+  loadSummary(monthPicker.value);
+  loadTransactions(monthPicker.value);
 }
 
 function categoryOptionsHtml(selectedId) {
-  return categories
+  return sortedCategoriesAlpha()
     .map(
       (c) =>
         `<option value="${c.id}" ${c.id === selectedId ? "selected" : ""}>${c.name}</option>`
@@ -95,14 +129,14 @@ function renderCategoryManage() {
     .map(
       (c) => `
     <div class="manage-row">
-      <input type="text" value="${c.name}" data-id="${c.id}" class="name-input" />
+      <input type="text" value="${escapeAttr(c.name)}" data-id="${c.id}" class="name-input" />
       <label class="checkbox-label manage-checkbox">
         <input type="checkbox" data-id="${c.id}" class="exclude-input" ${c.exclude_from_budget ? "checked" : ""} />
         Not in budget
       </label>
       <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
       ${c.is_fixed ? '<span class="badge">FIXED</span>' : "<span></span>"}
-      <button type="button" class="delete-cat-btn" data-id="${c.id}" data-name="${c.name}" title="Delete category">×</button>
+      <button type="button" class="delete-cat-btn" data-id="${c.id}" data-name="${escapeAttr(c.name)}" title="Delete category">×</button>
     </div>`
     )
     .join("");
@@ -238,10 +272,11 @@ async function loadTransactions(month) {
     const row = document.createElement("div");
     row.className = "txn-row";
     const sourceName = t.accounts?.name || "Unknown account";
+    const displayName = t.custom_name || t.merchant_name || t.name;
     row.innerHTML = `
       <div class="txn-date">${t.date}</div>
       <div>
-        <div>${t.merchant_name || t.name}</div>
+        <input type="text" class="txn-name-input" value="${escapeAttr(displayName)}" data-id="${t.id}" />
         <div class="txn-source">${sourceName}</div>
       </div>
       <div class="txn-amount">${fmt(t.amount)}</div>
@@ -251,6 +286,17 @@ async function loadTransactions(month) {
         <option value="${NEW_CATEGORY_VALUE}">+ New category...</option>
       </select>
     `;
+
+    row.querySelector(".txn-name-input").addEventListener("change", async (e) => {
+      const newName = e.target.value.trim();
+      await fetch("/api/transactions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: t.id, custom_name: newName }),
+      });
+      showStatus("Transaction renamed");
+    });
+
     row.querySelector("select").addEventListener("change", async (e) => {
       if (e.target.value === NEW_CATEGORY_VALUE) {
         const name = prompt("New category name:");
@@ -258,18 +304,28 @@ async function loadTransactions(month) {
           e.target.value = t.category_id || "";
           return;
         }
-        const exclude = confirm(
-          'Click OK if this is a normal budget category.\nClick Cancel if it should NOT count toward the budget (income, Maaser, transfers, etc).'
+        const isBudgetCategory = confirm(
+          `Should "${name.trim()}" count toward your monthly budget?\n\nOK = yes, it's a normal spending category.\nCancel = no, it's income/Maaser/transfers/something that shouldn't count as spending.`
         );
+        let monthly_budget = 0;
+        if (isBudgetCategory) {
+          const budgetInput = prompt(
+            "Monthly budget for this category (you can change this later):",
+            "0"
+          );
+          monthly_budget = parseFloat(budgetInput) || 0;
+        }
         const newId = await createCategory({
           name: name.trim(),
-          exclude_from_budget: !exclude,
+          monthly_budget,
+          exclude_from_budget: !isBudgetCategory,
         });
         await setTransactionCategory(t.id, newId);
         return;
       }
       await setTransactionCategory(t.id, e.target.value);
     });
+
     txnList.appendChild(row);
   }
 }
@@ -283,7 +339,11 @@ async function refresh() {
 }
 
 monthPicker.addEventListener("change", refresh);
-categoryFilter.addEventListener("change", () => loadTransactions(monthPicker.value));
+categoryFilter.addEventListener("change", onFilterChange);
+clearFilterBtn.addEventListener("click", () => {
+  categoryFilter.value = "";
+  onFilterChange();
+});
 
 let searchDebounce;
 searchBox.addEventListener("input", () => {
@@ -301,8 +361,8 @@ document.getElementById("addCategoryForm").addEventListener("submit", async (e) 
   document.getElementById("newCatName").value = "";
   document.getElementById("newCatBudget").value = "";
   document.getElementById("newCatExclude").checked = false;
-  loadSummary(monthPicker.value);
   showStatus(`Added category "${name}"`);
+  refresh(); // repopulates every dropdown already on screen, not just the manage panel
 });
 
 async function runFullSync() {
