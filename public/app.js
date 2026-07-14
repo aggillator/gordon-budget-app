@@ -915,8 +915,15 @@ const csvFileInput = document.getElementById("csvFileInput");
 const csvMappingArea = document.getElementById("csvMappingArea");
 const csvDateCol = document.getElementById("csvDateCol");
 const csvDescCol = document.getElementById("csvDescCol");
+const csvAmountMode = document.getElementById("csvAmountMode");
 const csvAmountCol = document.getElementById("csvAmountCol");
 const csvFlipSign = document.getElementById("csvFlipSign");
+const csvAmountSingleWrap = document.getElementById("csvAmountSingleWrap");
+const csvFlipWrap = document.getElementById("csvFlipWrap");
+const csvWithdrawalCol = document.getElementById("csvWithdrawalCol");
+const csvDepositCol = document.getElementById("csvDepositCol");
+const csvWithdrawalWrap = document.getElementById("csvWithdrawalWrap");
+const csvDepositWrap = document.getElementById("csvDepositWrap");
 const csvImportBtn = document.getElementById("csvImportBtn");
 
 let csvRows = [];
@@ -943,6 +950,8 @@ function populateCsvMapping() {
   const dateGuess = guessColumn(csvHeaders, ["date", "transactiondate", "postingdate"]);
   const descGuess = guessColumn(csvHeaders, ["description", "name", "merchant", "payee"]);
   const amountGuess = guessColumn(csvHeaders, ["amount", "debit", "total"]);
+  const withdrawalGuess = guessColumn(csvHeaders, ["withdrawal", "withdrawals", "debit", "debitamount"]);
+  const depositGuess = guessColumn(csvHeaders, ["deposit", "deposits", "credit", "creditamount"]);
 
   const opts = (selected) =>
     `<option value="">-- none --</option>` +
@@ -953,26 +962,57 @@ function populateCsvMapping() {
   csvDateCol.innerHTML = opts(dateGuess);
   csvDescCol.innerHTML = opts(descGuess);
   csvAmountCol.innerHTML = opts(amountGuess);
+  csvWithdrawalCol.innerHTML = opts(withdrawalGuess);
+  csvDepositCol.innerHTML = opts(depositGuess);
   csvAccountSelect.innerHTML = accounts
     .map((a) => `<option value="${a.id}">${a.name}${a.mask ? ` (...${a.mask})` : ""}</option>`)
     .join("");
+
+  // Auto-switch to split mode if we found separate withdrawal/deposit
+  // columns and no clean single amount column.
+  csvAmountMode.value = withdrawalGuess && depositGuess ? "split" : "single";
+  updateCsvAmountModeUI();
   csvMappingArea.hidden = false;
+}
+
+function updateCsvAmountModeUI() {
+  const isSplit = csvAmountMode.value === "split";
+  csvAmountSingleWrap.hidden = isSplit;
+  csvFlipWrap.hidden = isSplit;
+  csvWithdrawalWrap.hidden = !isSplit;
+  csvDepositWrap.hidden = !isSplit;
+}
+
+if (csvAmountMode) {
+  csvAmountMode.addEventListener("change", updateCsvAmountModeUI);
+}
+
+function parseAmountCell(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return 0;
+  return parseFloat(String(raw).replace(/[^0-9.-]/g, "")) || 0;
 }
 
 if (csvImportBtn) {
   csvImportBtn.addEventListener("click", async () => {
     const dateCol = csvDateCol.value;
     const descCol = csvDescCol.value;
-    const amountCol = csvAmountCol.value;
     const accountId = csvAccountSelect.value;
-    const flip = csvFlipSign.checked;
+    const isSplit = csvAmountMode.value === "split";
 
-    if (!dateCol || !descCol || !amountCol) {
-      showStatus("Please map date, description, and amount columns", 5000);
+    if (!dateCol || !descCol) {
+      showStatus("Please map date and description columns", 5000);
       return;
     }
     if (!accountId) {
       showStatus("Please choose an account first", 5000);
+      return;
+    }
+    if (isSplit && !csvWithdrawalCol.value && !csvDepositCol.value) {
+      showStatus("Please map at least one of withdrawal or deposit column", 5000);
+      return;
+    }
+    if (!isSplit && !csvAmountCol.value) {
+      showStatus("Please map the amount column", 5000);
       return;
     }
 
@@ -981,8 +1021,22 @@ if (csvImportBtn) {
         const d = new Date(row[dateCol]);
         if (isNaN(d)) return null;
         const date = d.toISOString().slice(0, 10);
-        let amount = parseFloat(String(row[amountCol]).replace(/[^0-9.-]/g, "")) || 0;
-        if (flip) amount = -amount;
+
+        let amount;
+        if (isSplit) {
+          // App convention: positive = money out (withdrawal), negative =
+          // money in (deposit) - matches Plaid. A row should only have one
+          // of the two columns filled in; if both happen to have a value,
+          // withdrawal wins (rare edge case, e.g. a $0 placeholder).
+          const withdrawal = csvWithdrawalCol.value ? parseAmountCell(row[csvWithdrawalCol.value]) : 0;
+          const deposit = csvDepositCol.value ? parseAmountCell(row[csvDepositCol.value]) : 0;
+          amount = withdrawal !== 0 ? Math.abs(withdrawal) : -Math.abs(deposit);
+        } else {
+          amount = parseAmountCell(row[csvAmountCol.value]);
+          if (csvFlipSign.checked) amount = -amount;
+        }
+
+        if (amount === 0) return null; // skip $0 / blank rows entirely
         return { date, name: row[descCol], amount };
       })
       .filter(Boolean);
