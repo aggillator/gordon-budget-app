@@ -1,73 +1,284 @@
-# Ledger — a free, self-hosted budget tracker
+const monthLabel = document.getElementById("monthLabel");
+const monthPicker = document.getElementById("monthPicker");
+const categoryFilter = document.getElementById("categoryFilter");
+const summaryList = document.getElementById("summaryList");
+const txnList = document.getElementById("txnList");
+const statusBar = document.getElementById("statusBar");
+const categoryManageList = document.getElementById("categoryManageList");
 
-Cloudflare Pages (hosting + API) + Supabase (database) + Plaid (bank sync).
-Total cost: $0, as long as you stay on free tiers (should be permanent for one person, a few accounts).
+let categories = [];
 
-## 1. Plaid — bank connection (free Trial plan)
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
 
-1. Sign up at https://dashboard.plaid.com/signup
-2. Because your team is created after April 15, 2026, you're automatically on the **free Trial plan** — real bank data, up to 10 connected accounts, no cost. (Dashboard → Team Settings → Plan will confirm this.)
-3. Dashboard → Keys: copy your `client_id` and `secret` (use the **Production** secret — Trial runs on production infrastructure, not sandbox, so you can link your real Amex/PayPal/bank accounts).
-4. Note: some smaller banks may need manual "Limited Production" approval for OAuth — the big ones (Chase, BofA, Wells Fargo, Amex) work immediately on Trial.
+function fmt(n) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
 
-## 2. Supabase — database (free tier)
+function monthName(m) {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
-1. Create a project at https://supabase.com/dashboard
-2. Go to SQL Editor → paste the contents of `schema.sql` from this project → Run. This creates all tables and seeds your current categories/budgets.
-3. Go to Project Settings → API. Copy:
-   - **Project URL**
-   - **service_role key** (NOT the anon key — the frontend never talks to Supabase directly, only your Cloudflare Functions do, using this key)
+function populateMonthPicker() {
+  const now = new Date();
+  monthPicker.innerHTML = "";
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const val = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = monthName(val);
+    monthPicker.appendChild(opt);
+  }
+  monthPicker.value = currentMonth();
+}
 
-## 3. Cloudflare Pages — hosting + API
+function showStatus(msg, ms = 3000) {
+  statusBar.textContent = msg;
+  statusBar.hidden = false;
+  setTimeout(() => (statusBar.hidden = true), ms);
+}
 
-1. Push this folder to a GitHub repo.
-2. Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git → pick the repo.
-3. Build settings: no build command needed, output directory = `public`.
-4. Deploy, then go to Settings → Environment variables and add these (as **secrets**, all environments):
+async function loadSummary(month) {
+  const res = await fetch(`/api/summary?month=${month}`);
+  const { summary } = await res.json();
+  summaryList.innerHTML = "";
 
-   | Variable | Value |
-   |---|---|
-   | `PLAID_CLIENT_ID` | from Plaid dashboard |
-   | `PLAID_SECRET` | from Plaid dashboard (production secret) |
-   | `PLAID_ENV` | `production` |
-   | `SUPABASE_URL` | from Supabase settings |
-   | `SUPABASE_SERVICE_KEY` | service_role key from Supabase |
-   | `ANTHROPIC_API_KEY` | from console.anthropic.com (only needed for AI categorization — costs a small amount per use, unlike everything else here) |
+  if (!summary.length) {
+    summaryList.innerHTML = `<p class="empty">No categories yet - run schema.sql in Supabase.</p>`;
+    return;
+  }
 
-5. Redeploy (Deployments → Retry deployment) so the functions pick up the new env vars.
+  for (const c of summary) {
+    const pct = c.budget > 0 ? Math.min(100, (c.actual / c.budget) * 100) : c.actual > 0 ? 100 : 0;
+    const over = c.actual > c.budget && c.budget > 0;
+    const row = document.createElement("div");
+    row.className = "cat-row";
+    row.innerHTML = `
+      <div class="cat-name">${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</div>
+      <div class="cat-figures">
+        <span class="${over ? "over" : "under"}">${fmt(c.actual)}</span> / ${fmt(c.budget)}
+      </div>
+      <div class="bar-track"><div class="bar-fill ${over ? "over" : "under"}" style="width:${pct}%"></div></div>
+    `;
+    summaryList.appendChild(row);
+  }
+}
 
-## 4. Lock the site down — important
+function populateCategoryFilter() {
+  const current = categoryFilter.value;
+  categoryFilter.innerHTML =
+    `<option value="">All categories</option><option value="unassigned">Unassigned</option>` +
+    categories.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  categoryFilter.value = current || "";
+}
 
-This app will hold live bank transaction data with no login screen built in. Before you put real credentials behind it:
+function renderCategoryManage() {
+  categoryManageList.innerHTML = categories
+    .map(
+      (c) => `
+    <div class="manage-row">
+      <span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</span>
+      <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" />
+    </div>`
+    )
+    .join("");
 
-- Cloudflare Zero Trust → Access → Applications → add your Pages domain, restrict to your email only. Free for up to 50 users, and it's the easiest way to keep this private without writing your own auth.
+  categoryManageList.querySelectorAll(".budget-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      await fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: e.target.dataset.id,
+          monthly_budget: parseFloat(e.target.value) || 0,
+        }),
+      });
+      loadSummary(monthPicker.value);
+      showStatus("Budget updated");
+    });
+  });
+}
 
-## 5. Using it
+async function loadCategories() {
+  const res = await fetch("/api/categories");
+  categories = await res.json();
+  populateCategoryFilter();
+  renderCategoryManage();
+}
 
-- **Connect a bank**: click "Connect a bank," log in through Plaid's widget (same flow your bank's own app uses), done.
-- **Sync transactions**: click "Sync transactions" any time to pull new activity. You can also hit `POST /api/sync-transactions` from a scheduled trigger (Cloudflare Cron Triggers, free) if you want it to run daily on its own — ask me if you want that wired up.
-- **Categorization**: new transactions are auto-suggested using the keyword rules in the `category_rules` table (seeded with a few of yours — Aisle One → Groceries, GasBuddy → Gas, etc.). Anything left unassigned can be run through **Categorize with AI**, which uses Claude Haiku to pick the best-fitting existing category. Every dropdown in the transaction list also lets you override manually; overrides are remembered as "manual" so future syncs and AI runs won't touch them.
-- **Filtering**: the category dropdown in the header filters the transaction list to just that category, or to everything still unassigned.
-- **Source account**: each transaction shows which connected account it came from (Amex, Schwab checking, PayPal, etc.) under the merchant name.
-- **Budgets & categories**: the "Manage categories" panel at the bottom lets you edit any monthly cap directly, or add a brand-new custom category.
+async function loadTransactions(month) {
+  let url = `/api/transactions?month=${month}`;
+  if (categoryFilter.value) url += `&category_id=${categoryFilter.value}`;
 
-## What's not built yet (intentionally left for a v2)
+  const res = await fetch(url);
+  const rows = await res.json();
+  txnList.innerHTML = "";
 
-- Multi-month trend charts
-- Automatic nightly sync (needs a Cloudflare Cron Trigger, ~5 min to add)
-- Splitting "Phone/Internet" back into Verizon/Boost/Ooma if you want that granularity
-- Deleting/archiving categories from the UI (currently add/edit only — delete via Supabase Table Editor)
+  if (!rows.length) {
+    txnList.innerHTML = `<p class="empty">No transactions match this view yet.</p>`;
+    return;
+  }
 
-## File map
+  for (const t of rows) {
+    const row = document.createElement("div");
+    row.className = "txn-row";
+    const options = categories
+      .map(
+        (c) =>
+          `<option value="${c.id}" ${c.id === t.category_id ? "selected" : ""}>${c.name}</option>`
+      )
+      .join("");
+    const sourceName = t.accounts?.name || "Unknown account";
+    row.innerHTML = `
+      <div class="txn-date">${t.date}</div>
+      <div>
+        <div>${t.merchant_name || t.name}</div>
+        <div class="txn-source">${sourceName}</div>
+      </div>
+      <div class="txn-amount">${fmt(t.amount)}</div>
+      <select data-id="${t.id}">
+        <option value="">- uncategorized -</option>
+        ${options}
+      </select>
+    `;
+    row.querySelector("select").addEventListener("change", async (e) => {
+      const res = await fetch("/api/transactions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: t.id, category_id: e.target.value || null }),
+      });
+      const data = await res.json();
+      showStatus(
+        data.propagated
+          ? `Category updated - applied to ${data.propagated} similar transaction${data.propagated === 1 ? "" : "s"}`
+          : "Category updated"
+      );
+      refresh();
+    });
+    txnList.appendChild(row);
+  }
+}
 
-```
-schema.sql                       — run once in Supabase
-functions/_utils.js              — shared Supabase/Plaid helpers
-functions/api/create-link-token  — starts the Plaid Link flow
-functions/api/exchange-token     — finishes linking a bank, saves accounts
-functions/api/sync-transactions  — pulls transactions from Plaid into Supabase
-functions/api/transactions       — list + recategorize transactions
-functions/api/categories         — list categories/budgets
-functions/api/summary            — budget vs. actual per category per month
-public/                          — the dashboard (plain HTML/JS, no build step)
-```
+async function refresh() {
+  const month = monthPicker.value;
+  monthLabel.textContent = monthName(month);
+  await loadCategories();
+  await loadSummary(month);
+  await loadTransactions(month);
+}
+
+monthPicker.addEventListener("change", refresh);
+categoryFilter.addEventListener("change", () => loadTransactions(monthPicker.value));
+
+document.getElementById("addCategoryForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = document.getElementById("newCatName").value.trim();
+  const monthly_budget = parseFloat(document.getElementById("newCatBudget").value) || 0;
+  if (!name) return;
+  await fetch("/api/categories", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, monthly_budget }),
+  });
+  document.getElementById("newCatName").value = "";
+  document.getElementById("newCatBudget").value = "";
+  await loadCategories();
+  loadSummary(monthPicker.value);
+  showStatus(`Added category "${name}"`);
+});
+
+async function runFullSync() {
+  let totalAdded = 0,
+    totalModified = 0,
+    hasMore = true,
+    rounds = 0;
+
+  while (hasMore && rounds < 30) {
+    rounds++;
+    showStatus(`Syncing... (${totalAdded} transactions so far)`, 60000);
+    const res = await fetch("/api/sync-transactions", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Sync failed");
+    totalAdded += data.added;
+    totalModified += data.modified;
+    hasMore = data.hasMore;
+  }
+  return { totalAdded, totalModified };
+}
+
+async function runAiCategorize() {
+  let totalCategorized = 0,
+    hasMore = true,
+    rounds = 0,
+    allNewCategories = new Set();
+
+  while (hasMore && rounds < 15) {
+    rounds++;
+    showStatus(`AI categorizing... (${totalCategorized} done)`, 60000);
+    const res = await fetch("/api/categorize-ai", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "AI categorization failed");
+    totalCategorized += data.categorized;
+    hasMore = data.hasMore;
+    (data.newCategories || []).forEach((n) => allNewCategories.add(n));
+  }
+
+  return { totalCategorized, newCategories: [...allNewCategories] };
+}
+
+document.getElementById("syncBtn").addEventListener("click", async () => {
+  try {
+    const { totalAdded, totalModified } = await runFullSync();
+    showStatus(`Synced - ${totalAdded} new, ${totalModified} updated`);
+    refresh();
+  } catch (err) {
+    showStatus(`Sync failed: ${err.message}`, 6000);
+  }
+});
+
+document.getElementById("aiCategorizeBtn").addEventListener("click", async () => {
+  try {
+    const { totalCategorized, newCategories } = await runAiCategorize();
+    const newCatMsg = newCategories.length
+      ? ` (created: ${newCategories.join(", ")})`
+      : "";
+    showStatus(
+      `AI categorized ${totalCategorized} transaction${totalCategorized === 1 ? "" : "s"}${newCatMsg}`,
+      6000
+    );
+    refresh();
+  } catch (err) {
+    showStatus(`AI categorization failed: ${err.message}`, 6000);
+  }
+});
+
+document.getElementById("connectBtn").addEventListener("click", async () => {
+  const res = await fetch("/api/create-link-token", { method: "POST" });
+  const { link_token } = await res.json();
+  const handler = Plaid.create({
+    token: link_token,
+    onSuccess: async (public_token) => {
+      showStatus("Linking account...");
+      await fetch("/api/exchange-token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ public_token }),
+      });
+      showStatus("Bank connected - syncing now...", 60000);
+      const { totalAdded } = await runFullSync();
+      showStatus(`Connected - pulled ${totalAdded} transactions`);
+      refresh();
+    },
+  });
+  handler.open();
+});
+
+populateMonthPicker();
+refresh();

@@ -4,8 +4,31 @@ import { json, sb, anthropic } from "../_utils.js";
 // loops until caught up), using Claude Haiku to pick the best-fitting
 // existing category for each transaction - or propose a brand-new one if
 // nothing fits. Never touches transactions that already have a category.
-const BATCH_SIZE = 60;
+const BATCH_SIZE = 25;
 const MAX_NEW_CATEGORIES_PER_RUN = 5; // safety cap against a bad response spawning junk
+
+// Salvages whatever complete "id": "category" entries exist in a JSON object
+// that got cut off mid-string, instead of discarding the whole batch.
+function repairTruncatedMapping(raw) {
+  let text = raw.replace(/```json|```/g, "").trim();
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  text = text.slice(start);
+
+  // Walk backwards to the last comma that sits between two complete entries
+  // (i.e. followed by a quote, meaning what came before it was a full pair).
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] === "," ) {
+      const candidate = text.slice(0, i) + "}";
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
 
 export async function onRequestPost({ env }) {
   try {
@@ -35,22 +58,37 @@ For each transaction below (format: id|merchant or description|amount), pick the
 Transactions:
 ${txnList}
 
-Respond with ONLY a JSON object mapping transaction id to category name, no other text, no markdown fences. Example: {"abc-123": "Groceries", "def-456": "Pet Supplies"}`;
+Respond with ONLY a single-line, compact JSON object mapping transaction id to category name - no pretty-printing, no line breaks, no extra whitespace, no markdown fences, no other text. Example: {"abc-123":"Groceries","def-456":"Pet Supplies"}`;
 
     const raw = await anthropic(
       env,
-      "You are a precise personal-finance transaction categorizer. Respond with strict JSON only.",
+      "You are a precise personal-finance transaction categorizer. Respond with strict, compact, single-line JSON only - this saves output space, which matters.",
       prompt,
-      2000
+      8192
     );
 
     let mapping;
+    let wasTruncated = false;
     try {
       mapping = JSON.parse(raw.replace(/```json|```/g, "").trim());
     } catch {
       const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error(`Could not parse AI response: ${raw.slice(0, 300)}`);
-      mapping = JSON.parse(match[0]);
+      if (match) {
+        try {
+          mapping = JSON.parse(match[0]);
+        } catch {
+          mapping = null;
+        }
+      }
+      if (!mapping) {
+        mapping = repairTruncatedMapping(raw);
+        wasTruncated = true;
+      }
+      if (!mapping) {
+        throw new Error(
+          `Could not parse or repair AI response (${raw.length} chars received): ${raw.slice(-200)}`
+        );
+      }
     }
 
     const normalize = (s) => (s || "").trim().toLowerCase();
@@ -104,12 +142,15 @@ Respond with ONLY a JSON object mapping transaction id to category name, no othe
       });
     }
 
-    const hasMore = categorized > 0 && unassigned.length === BATCH_SIZE;
+    // Always retry if the batch was full - either there's genuinely more
+    // work, or this batch got truncated and needs reprocessing anyway.
+    const hasMore = unassigned.length === BATCH_SIZE && (categorized > 0 || wasTruncated);
 
     return json({
       categorized,
       hasMore,
       newCategories: [...newCategoryNames],
+      wasTruncated,
     });
   } catch (err) {
     return json({ error: err.message, stack: err.stack }, 500);

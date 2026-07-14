@@ -216,7 +216,8 @@ async function runFullSync() {
 async function runAiCategorize() {
   let totalCategorized = 0,
     hasMore = true,
-    rounds = 0;
+    rounds = 0,
+    allNewCategories = new Set();
 
   while (hasMore && rounds < 15) {
     rounds++;
@@ -226,8 +227,10 @@ async function runAiCategorize() {
     if (!res.ok) throw new Error(data.error || "AI categorization failed");
     totalCategorized += data.categorized;
     hasMore = data.hasMore;
+    (data.newCategories || []).forEach((n) => allNewCategories.add(n));
   }
-  return totalCategorized;
+
+  return { totalCategorized, newCategories: [...allNewCategories] };
 }
 
 document.getElementById("syncBtn").addEventListener("click", async () => {
@@ -242,8 +245,14 @@ document.getElementById("syncBtn").addEventListener("click", async () => {
 
 document.getElementById("aiCategorizeBtn").addEventListener("click", async () => {
   try {
-    const total = await runAiCategorize();
-    showStatus(`AI categorized ${total} transaction${total === 1 ? "" : "s"}`);
+    const { totalCategorized, newCategories } = await runAiCategorize();
+    const newCatMsg = newCategories.length
+      ? ` (created: ${newCategories.join(", ")})`
+      : "";
+    showStatus(
+      `AI categorized ${totalCategorized} transaction${totalCategorized === 1 ? "" : "s"}${newCatMsg}`,
+      6000
+    );
     refresh();
   } catch (err) {
     showStatus(`AI categorization failed: ${err.message}`, 6000);
