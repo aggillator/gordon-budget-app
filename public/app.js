@@ -255,7 +255,15 @@ function categoryOptionsHtml(selectedId) {
 }
 
 function renderCategoryManage() {
-  categoryManageList.innerHTML = sortedCategoriesAlpha()
+  const sorted = sortedCategoriesAlpha();
+  const mergeOptions = (excludeId) =>
+    `<option value="">Merge into...</option>` +
+    sorted
+      .filter((c) => c.id !== excludeId)
+      .map((c) => `<option value="${c.id}">${escapeAttr(c.name)}</option>`)
+      .join("");
+
+  categoryManageList.innerHTML = sorted
     .map(
       (c) => `
     <div class="manage-row">
@@ -266,10 +274,41 @@ function renderCategoryManage() {
       </label>
       <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
       ${c.is_fixed ? '<span class="badge">FIXED</span>' : "<span></span>"}
+      <select class="merge-select" data-id="${c.id}" data-name="${escapeAttr(c.name)}">${mergeOptions(c.id)}</select>
       <button type="button" class="delete-cat-btn" data-id="${c.id}" data-name="${escapeAttr(c.name)}" title="Delete category">×</button>
     </div>`
     )
     .join("");
+
+  categoryManageList.querySelectorAll(".merge-select").forEach((select) => {
+    select.addEventListener("change", async (e) => {
+      const sourceId = e.target.dataset.id;
+      const sourceName = e.target.dataset.name;
+      const targetId = e.target.value;
+      if (!targetId) return;
+      const targetName = e.target.options[e.target.selectedIndex].textContent;
+      if (
+        !confirm(
+          `Merge "${sourceName}" into "${targetName}"?\n\nAll of "${sourceName}"'s transactions and keyword rules move to "${targetName}", their budgets combine, and "${sourceName}" is deleted. This cannot be undone.`
+        )
+      ) {
+        e.target.value = "";
+        return;
+      }
+      const res = await fetch("/api/merge-category", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source_id: sourceId, target_id: targetId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(`Merge failed: ${data.error}`, 6000);
+        return;
+      }
+      showStatus(`Merged "${sourceName}" into "${targetName}" - ${data.moved} transaction${data.moved === 1 ? "" : "s"} moved`);
+      refresh();
+    });
+  });
 
   categoryManageList.querySelectorAll(".name-input").forEach((input) => {
     input.addEventListener("change", async (e) => {

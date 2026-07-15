@@ -647,11 +647,21 @@ h2 {
 
 .manage-row {
   display: grid;
-  grid-template-columns: 1fr 160px 120px 60px 32px;
+  grid-template-columns: 1fr 160px 110px 60px 150px 32px;
   gap: 10px;
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--paper-line);
+}
+
+.manage-row .merge-select {
+  padding: 6px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
 }
 
 .delete-cat-btn {

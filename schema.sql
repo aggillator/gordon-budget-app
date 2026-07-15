@@ -93,6 +93,34 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Merges one category into another: moves every transaction and keyword
+-- rule from source to target, combines their budgets, deletes source. Same
+-- trigger-bypass reasoning as delete_category above.
+create or replace function merge_category(source_id uuid, target_id uuid)
+returns integer as $$
+declare
+  affected integer;
+begin
+  if source_id = target_id then
+    raise exception 'source and target categories are the same';
+  end if;
+
+  set local session_replication_role = replica;
+  update transactions set category_id = target_id where category_id = source_id;
+  get diagnostics affected = row_count;
+  set local session_replication_role = default;
+
+  update category_rules set category_id = target_id where category_id = source_id;
+
+  update categories set monthly_budget = monthly_budget + (select monthly_budget from categories where id = source_id)
+  where id = target_id;
+
+  delete from categories where id = source_id;
+
+  return affected;
+end;
+$$ language plpgsql security definer;
+
 -- Undo log for bulk actions (AI categorize runs, category deletion,
 -- category-with-propagation changes). Each row stores exactly what's needed
 -- to reverse it - see functions/api/undo.js.
