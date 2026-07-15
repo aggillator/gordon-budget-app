@@ -1,4 +1,4 @@
-import { json, sb } from "../_utils.js";
+import { json, sb, logAction } from "../_utils.js";
 
 export async function onRequestGet({ env }) {
   const rows = await sb(env, "categories?select=*&order=sort_order.asc");
@@ -38,9 +38,26 @@ export async function onRequestDelete({ request, env }) {
   const id = url.searchParams.get("id");
   if (!id) return json({ error: "id required" }, 400);
 
+  const [category] = await sb(env, `categories?id=eq.${id}&select=*`);
+  if (!category) return json({ error: "not found" }, 404);
+
+  const affected = await sb(
+    env,
+    `transactions?category_id=eq.${id}&select=id,category_id,category_source`
+  );
+
   const uncategorized = await sb(env, "rpc/delete_category", {
     method: "POST",
     body: { target_id: id },
+  });
+
+  await logAction(env, "category_delete", `Deleted category "${category.name}"`, {
+    category,
+    transactions: affected.map((t) => ({
+      id: t.id,
+      prior_category_id: t.category_id,
+      prior_category_source: t.category_source,
+    })),
   });
 
   return json({ ok: true, uncategorized });

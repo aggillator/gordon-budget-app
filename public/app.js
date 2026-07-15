@@ -42,6 +42,9 @@ function escapeAttr(s) {
     .replace(/>/g, "&gt;");
 }
 
+// Plaid's raw convention is the opposite of how people read a statement:
+// positive = money out, negative = money in. This flips it for display only
+// - debits show "-", deposits show "+" - the underlying data/math is untouched.
 function fmtTxnAmount(amount) {
   const isDeposit = amount < 0;
   const abs = Math.abs(amount);
@@ -61,7 +64,7 @@ function monthName(m) {
 
 async function populateMonthPicker() {
   const now = new Date();
-  let monthsBack = 6;
+  let monthsBack = 6; // fallback if there's no data yet
 
   try {
     const res = await fetch("/api/date-range");
@@ -70,7 +73,7 @@ async function populateMonthPicker() {
       const [ey, em] = earliest.split("-").map(Number);
       monthsBack =
         (now.getUTCFullYear() - ey) * 12 + (now.getUTCMonth() + 1 - em) + 1;
-      monthsBack = Math.max(1, Math.min(monthsBack, 36));
+      monthsBack = Math.max(1, Math.min(monthsBack, 36)); // sane cap either direction
     }
   } catch {
     // fall back to 6 months if this fails for any reason
@@ -397,6 +400,8 @@ document.getElementById("matchAmazonBtn").addEventListener("click", async () => 
     return;
   }
 
+  // Sent in small batches - the endpoint fetches candidate transactions once
+  // per call, so keeping batches modest avoids Cloudflare's subrequest cap.
   const CHUNK = 30;
   let totalMatched = 0;
 
@@ -535,6 +540,9 @@ async function loadCategories() {
   renderCategoryManage();
 }
 
+// Creates a category via the API and returns its id. Used by both the
+// bottom "Manage categories" form and the inline quick-add in each
+// transaction row, so both stay in sync with the same logic.
 async function createCategory({ name, monthly_budget = 0, exclude_from_budget = false }) {
   const res = await fetch("/api/categories", {
     method: "POST",
@@ -547,10 +555,32 @@ async function createCategory({ name, monthly_budget = 0, exclude_from_budget = 
 }
 
 async function setTransactionCategory(txnId, categoryId) {
+  if (!categoryId) {
+    return applyTransactionCategory(txnId, null, false);
+  }
+
+  const previewRes = await fetch("/api/transactions", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: txnId, category_id: categoryId, preview: true }),
+  });
+  const preview = await previewRes.json();
+
+  let applyToAll = false;
+  if (preview.match_count > 0) {
+    applyToAll = confirm(
+      `${preview.match_count} other transaction${preview.match_count === 1 ? "" : "s"} match "${preview.keyword}".\n\nOK = apply this category to all ${preview.match_count + 1} of them\nCancel = just this one transaction`
+    );
+  }
+
+  await applyTransactionCategory(txnId, categoryId, applyToAll);
+}
+
+async function applyTransactionCategory(txnId, categoryId, applyToAll) {
   const res = await fetch("/api/transactions", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: txnId, category_id: categoryId || null }),
+    body: JSON.stringify({ id: txnId, category_id: categoryId || null, apply_to_all: applyToAll }),
   });
   const data = await res.json();
   showStatus(
@@ -561,6 +591,8 @@ async function setTransactionCategory(txnId, categoryId) {
   refresh();
 }
 
+// Builds the query params shared by both the on-screen transaction list and
+// the PDF export, so what you see is what you get.
 function buildTransactionParams(month) {
   const params = new URLSearchParams();
   const search = searchBox.value.trim();
@@ -580,6 +612,10 @@ function buildTransactionParams(month) {
   return params;
 }
 
+// Type (deposit/withdrawal) and min/max amount are applied client-side after
+// fetch rather than in SQL - Plaid stores withdrawals positive and deposits
+// negative, so a clean "amount over $X regardless of direction" filter is
+// simpler and more robust done here than as a sign-aware Postgres query.
 function applyClientFilters(rows) {
   const type = filterType.value;
   const min = parseFloat(filterMinAmount.value);
@@ -610,16 +646,29 @@ function applySort(rows) {
   return sorted;
 }
 
+let selectedTxnIds = new Set();
+
+function updateBulkToolbar() {
+  const btn = document.getElementById("deleteSelectedBtn");
+  btn.textContent = `Delete selected (${selectedTxnIds.size})`;
+  btn.hidden = selectedTxnIds.size === 0;
+  const selectAll = document.getElementById("selectAllTxns");
+  const boxes = txnList.querySelectorAll(".txn-checkbox");
+  selectAll.checked = boxes.length > 0 && [...boxes].every((b) => b.checked);
+}
+
 async function loadTransactions(month) {
   let rows = await fetchFilteredTransactions(month);
   rows = applySort(rows);
   txnList.innerHTML = "";
+  selectedTxnIds = new Set();
 
   if (!rows.length) {
     const search = searchBox.value.trim();
     txnList.innerHTML = search
       ? `<p class="empty">No transactions match "${search}".</p>`
       : `<p class="empty">No transactions match the current filters.</p>`;
+    updateBulkToolbar();
     return;
   }
 
@@ -629,6 +678,7 @@ async function loadTransactions(month) {
     const sourceName = t.accounts?.name || "Unknown account";
     const displayName = t.custom_name || t.merchant_name || t.name;
     row.innerHTML = `
+      <input type="checkbox" class="txn-checkbox" data-id="${t.id}" />
       <div class="txn-date">${t.date}</div>
       <div>
         <input type="text" class="txn-name-input" value="${escapeAttr(displayName)}" data-id="${t.id}" />
@@ -641,6 +691,12 @@ async function loadTransactions(month) {
         <option value="${NEW_CATEGORY_VALUE}">+ New category...</option>
       </select>
     `;
+
+    row.querySelector(".txn-checkbox").addEventListener("change", (e) => {
+      if (e.target.checked) selectedTxnIds.add(t.id);
+      else selectedTxnIds.delete(t.id);
+      updateBulkToolbar();
+    });
 
     row.querySelector(".txn-name-input").addEventListener("change", async (e) => {
       const newName = e.target.value.trim();
@@ -683,7 +739,98 @@ async function loadTransactions(month) {
 
     txnList.appendChild(row);
   }
+
+  updateBulkToolbar();
 }
+
+document.getElementById("selectAllTxns").addEventListener("change", (e) => {
+  const boxes = txnList.querySelectorAll(".txn-checkbox");
+  boxes.forEach((b) => {
+    b.checked = e.target.checked;
+    if (e.target.checked) selectedTxnIds.add(b.dataset.id);
+    else selectedTxnIds.delete(b.dataset.id);
+  });
+  updateBulkToolbar();
+});
+
+document.getElementById("deleteSelectedBtn").addEventListener("click", async () => {
+  const count = selectedTxnIds.size;
+  if (!count) return;
+  if (
+    !confirm(
+      `Permanently delete ${count} selected transaction${count === 1 ? "" : "s"}? This cannot be undone.`
+    )
+  ) {
+    return;
+  }
+  const res = await fetch("/api/delete-transactions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [...selectedTxnIds] }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    showStatus(`Delete failed: ${data.error}`, 6000);
+    return;
+  }
+  showStatus(`Deleted ${data.deleted} transaction${data.deleted === 1 ? "" : "s"}`);
+  refresh();
+});
+
+async function loadRecentActions() {
+  const res = await fetch("/api/undo");
+  const rows = await res.json();
+  const list = document.getElementById("recentActionsList");
+
+  if (!rows.length) {
+    list.innerHTML = `<p class="empty">No actions logged yet.</p>`;
+    return;
+  }
+
+  list.innerHTML = rows
+    .map((r) => {
+      const time = new Date(r.created_at).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      return `
+    <div class="action-log-row">
+      <span>${escapeAttr(r.description)}</span>
+      <span class="action-time">${time}</span>
+      <button type="button" class="undo-btn" data-id="${r.id}" ${r.undone ? "disabled" : ""}>
+        ${r.undone ? "Undone" : "Undo"}
+      </button>
+    </div>`;
+    })
+    .join("");
+
+  list.querySelectorAll(".undo-btn:not(:disabled)").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.target.dataset.id;
+      if (!confirm("Undo this action? This restores the prior state for everything it affected.")) {
+        return;
+      }
+      const res = await fetch("/api/undo", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(`Undo failed: ${data.error}`, 6000);
+        return;
+      }
+      showStatus(`Undone - restored ${data.restored} transaction${data.restored === 1 ? "" : "s"}`);
+      refresh();
+    });
+  });
+}
+
+document.getElementById("recentActionsDetails").addEventListener("toggle", (e) => {
+  if (e.target.open) loadRecentActions();
+});
 
 async function refresh() {
   const month = monthPicker.value;
@@ -694,6 +841,7 @@ async function refresh() {
   await loadSummary(month);
   await loadTransactions(month);
   if (document.getElementById("insightsDetails").open) loadInsights();
+  if (document.getElementById("recentActionsDetails").open) loadRecentActions();
 }
 
 monthPicker.addEventListener("change", refresh);
@@ -748,7 +896,7 @@ document.getElementById("addCategoryForm").addEventListener("submit", async (e) 
   document.getElementById("newCatBudget").value = "";
   document.getElementById("newCatExclude").checked = false;
   showStatus(`Added category "${name}"`);
-  refresh();
+  refresh(); // repopulates every dropdown already on screen, not just the manage panel
 });
 
 async function runFullSync() {
@@ -860,6 +1008,8 @@ async function exportPdf() {
   if (filterCat) subtitle += ` - ${filterCat.name} only`;
   doc.text(subtitle, 14, 25);
 
+  // Budget vs. actual (always reflects the selected month, regardless of
+  // any other filter applied to the transaction list below)
   const summaryRes = await fetch(`/api/summary?month=${month}`);
   const { summary } = await summaryRes.json();
   doc.autoTable({
@@ -879,6 +1029,8 @@ async function exportPdf() {
     styles: { fontSize: 9 },
   });
 
+  // Transaction list - respects every active filter (search, category,
+  // date range, account, type, amount range)
   const txns = await fetchFilteredTransactions(month);
 
   doc.autoTable({
@@ -1052,7 +1204,12 @@ if (csvImportBtn) {
       showStatus(`Import failed: ${data.error}`, 6000);
       return;
     }
-    showStatus(`Imported ${data.imported} transactions`, 8000);
+    showStatus(
+      data.skipped
+        ? `Imported ${data.imported} - skipped ${data.skipped} already covered by bank sync`
+        : `Imported ${data.imported} transactions`,
+      8000
+    );
     csvMappingArea.hidden = true;
     csvFileInput.value = "";
     refresh();

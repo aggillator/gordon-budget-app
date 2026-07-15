@@ -45,7 +45,8 @@ create table if not exists transactions (
   merchant_name text,
   amount numeric(10,2) not null,        -- positive = money out, negative = money in (Plaid convention)
   category_id uuid references categories(id),
-  category_source text default 'unassigned', -- 'auto' | 'manual' | 'unassigned'
+  category_source text default 'unassigned', -- 'auto' | 'manual' | 'unassigned' | 'ai' | 'rule'
+  custom_name text, -- user-set display name override, e.g. from the Amazon import - never touched by sync
   pending boolean default false,
   created_at timestamptz default now()
 );
@@ -90,6 +91,20 @@ begin
   return affected;
 end;
 $$ language plpgsql security definer;
+
+-- Undo log for bulk actions (AI categorize runs, category deletion,
+-- category-with-propagation changes). Each row stores exactly what's needed
+-- to reverse it - see functions/api/undo.js.
+create table if not exists action_log (
+  id uuid primary key default gen_random_uuid(),
+  action_type text not null,
+  description text not null,
+  snapshot jsonb not null,
+  created_at timestamptz default now(),
+  undone boolean default false
+);
+
+create index if not exists idx_action_log_created on action_log(created_at desc);
 
 -- Seed categories (broad spending types, not specific merchants/brands -
 -- edit amounts any time in the app)

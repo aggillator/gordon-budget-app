@@ -87,3 +87,13 @@ export function suggestCategory(rules, txn) {
   const hit = rules.find((r) => haystack.includes(r.keyword.toLowerCase()));
   return hit ? hit.category_id : null;
 }
+
+// Records a snapshot of "what changed" for one of the three undoable bulk
+// actions (AI categorize run, category deletion, category propagation to
+// similar transactions). Undo just replays this snapshot in reverse.
+export async function logAction(env, action_type, description, snapshot) {
+  await sb(env, "action_log", {
+    method: "POST",
+    body: { action_type, description, snapshot },
+  });
+}

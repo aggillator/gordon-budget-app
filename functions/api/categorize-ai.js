@@ -1,4 +1,4 @@
-import { json, sb, anthropic } from "../_utils.js";
+import { json, sb, anthropic, logAction } from "../_utils.js";
 
 // Processes a bounded batch of unassigned transactions per call (frontend
 // loops until caught up), using Claude Haiku to pick the best-fitting
@@ -15,10 +15,8 @@ function repairTruncatedMapping(raw) {
   if (start === -1) return null;
   text = text.slice(start);
 
-  // Walk backwards to the last comma that sits between two complete entries
-  // (i.e. followed by a quote, meaning what came before it was a full pair).
   for (let i = text.length - 1; i >= 0; i--) {
-    if (text[i] === "," ) {
+    if (text[i] === ",") {
       const candidate = text.slice(0, i) + "}";
       try {
         return JSON.parse(candidate);
@@ -43,8 +41,11 @@ export async function onRequestPost({ env }) {
     }
 
     const categoryList = categories.map((c) => c.name).join(", ");
+    // Prefer custom_name (e.g. an actual item title from the Amazon import)
+    // over the generic merchant name when available - "USB Cable" gives the
+    // model far more to work with than "Amazon".
     const txnList = unassigned
-      .map((t) => `${t.id}|${t.merchant_name || t.name}|$${t.amount}`)
+      .map((t) => `${t.id}|${t.custom_name || t.merchant_name || t.name}|$${t.amount}`)
       .join("\n");
 
     const prompt = `Existing categories (prefer these, use the EXACT string if you use one): ${categoryList}
@@ -96,6 +97,7 @@ Respond with ONLY a single-line, compact JSON object mapping transaction id to c
     const newCategoryNames = new Set();
 
     const rows = [];
+    const loggedTxns = [];
     let categorized = 0;
 
     for (const t of unassigned) {
@@ -131,6 +133,10 @@ Respond with ONLY a single-line, compact JSON object mapping transaction id to c
         category_id,
         category_source: "ai",
       });
+      // Every transaction in `unassigned` was fetched with category_source
+      // = 'unassigned' and category_id = null, so that's always the prior
+      // state to restore on undo.
+      loggedTxns.push({ id: t.id, prior_category_id: null, prior_category_source: "unassigned" });
       categorized++;
     }
 
@@ -140,6 +146,12 @@ Respond with ONLY a single-line, compact JSON object mapping transaction id to c
         prefer: "resolution=merge-duplicates",
         body: rows,
       });
+      await logAction(
+        env,
+        "ai_categorize",
+        `AI categorized ${rows.length} transaction${rows.length === 1 ? "" : "s"}`,
+        { transactions: loggedTxns }
+      );
     }
 
     // Always retry if the batch was full - either there's genuinely more

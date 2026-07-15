@@ -3,9 +3,9 @@ import { json, sb } from "../_utils.js";
 // Matches Amazon order-history rows (already grouped/parsed client-side) to
 // existing transactions by amount (close match) + date (within ~10 days,
 // since Amazon often charges a few days after ordering) and renames the
-// transaction to "Amazon: " followed by the item title(s). Never touches a
-// transaction that already has a custom_name - that's treated as already
-// labeled, by you or a previous import run.
+// transaction to the item title(s). Never touches a transaction that
+// already has a custom_name - that's treated as already labeled, by you or
+// a previous import run.
 export async function onRequestPost({ request, env }) {
   try {
     const { orders } = await request.json();
@@ -27,7 +27,6 @@ export async function onRequestPost({ request, env }) {
         unmatched.push(order);
         continue;
       }
-
       const orderDate = new Date(order.date);
       let best = null;
       let bestDiff = Infinity;
@@ -45,10 +44,9 @@ export async function onRequestPost({ request, env }) {
 
       if (best) {
         used.add(best.id);
-        const label = `Amazon: ${order.title}`.slice(0, 200);
         await sb(env, `transactions?id=eq.${best.id}`, {
           method: "PATCH",
-          body: { custom_name: label },
+          body: { custom_name: order.title },
         });
         matched++;
       } else {

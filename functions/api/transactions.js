@@ -1,8 +1,8 @@
-import { json, sb } from "../_utils.js";
+import { json, sb, logAction } from "../_utils.js";
 
 export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
-  const month = url.searchParams.get("month"); // e.g. "2026-07"
+  const month = url.searchParams.get("month");
   const dateFrom = url.searchParams.get("date_from");
   const dateTo = url.searchParams.get("date_to");
   const categoryId = url.searchParams.get("category_id");
@@ -38,13 +38,16 @@ export async function onRequestGet({ request, env }) {
   return json(rows);
 }
 
-// Two different kinds of edit come through here:
-// - category_id present: the category-change flow (marks manual, saves a
-//   rule, propagates to similar transactions - see below)
-// - custom_name present: just renaming the transaction for display, no
-//   propagation, doesn't touch category at all
+// Three kinds of request come through here:
+// - custom_name present: just renaming the transaction for display
+// - category_id + preview:true: dry run - reports how many OTHER
+//   transactions would be affected, without changing anything, so the
+//   frontend can show a confirmation dialog with a real count
+// - category_id (+ apply_to_all): the actual category change. Always
+//   updates the one transaction; only propagates to similar transactions
+//   if apply_to_all is true.
 export async function onRequestPatch({ request, env }) {
-  const { id, category_id, custom_name } = await request.json();
+  const { id, category_id, custom_name, preview, apply_to_all } = await request.json();
   if (!id) return json({ error: "id required" }, 400);
 
   if (custom_name !== undefined) {
@@ -55,7 +58,31 @@ export async function onRequestPatch({ request, env }) {
     return json({ ok: true });
   }
 
-  const [txn] = await sb(env, `transactions?id=eq.${id}&select=merchant_name,name`);
+  const [txn] = await sb(
+    env,
+    `transactions?id=eq.${id}&select=merchant_name,name,custom_name,category_id,category_source`
+  );
+  if (!txn) return json({ error: "transaction not found" }, 404);
+
+  // Prefer matching on the item-level custom_name (e.g. from an Amazon
+  // import) over the generic merchant name - "USB Cable" is specific;
+  // "Amazon" matches everything you've ever bought there. This is the fix
+  // for the Amazon-wide mis-categorization incident.
+  const matchField = txn.custom_name ? "custom_name" : txn.merchant_name ? "merchant_name" : "name";
+  const keyword = (txn[matchField] || "").trim();
+
+  let matches = [];
+  if (category_id && keyword.length >= 3) {
+    const pattern = `*${encodeURIComponent(keyword)}*`;
+    matches = await sb(
+      env,
+      `transactions?id=neq.${id}&category_source=neq.manual&select=id,category_id,category_source&${matchField}=ilike.${pattern}`
+    );
+  }
+
+  if (preview) {
+    return json({ match_count: matches.length, match_field: matchField, keyword });
+  }
 
   await sb(env, `transactions?id=eq.${id}`, {
     method: "PATCH",
@@ -64,10 +91,11 @@ export async function onRequestPatch({ request, env }) {
 
   let propagated = 0;
 
-  if (category_id && txn) {
-    const keyword = (txn.merchant_name || txn.name || "").trim();
-
-    if (keyword.length >= 3) {
+  if (category_id && apply_to_all && matches.length > 0) {
+    // Only save a keyword rule when matching on the real merchant name -
+    // custom_name isn't visible to the sync pipeline for brand-new
+    // transactions, so a rule keyed on it would never actually fire.
+    if (matchField !== "custom_name") {
       const existingRule = await sb(
         env,
         `category_rules?keyword=eq.${encodeURIComponent(keyword)}`
@@ -83,20 +111,34 @@ export async function onRequestPatch({ request, env }) {
           body: { keyword, category_id },
         });
       }
-
-      const field = txn.merchant_name ? "merchant_name" : "name";
-      const pattern = `*${encodeURIComponent(keyword)}*`;
-      const updated = await sb(
-        env,
-        `transactions?id=neq.${id}&category_source=neq.manual&${field}=ilike.${pattern}`,
-        {
-          method: "PATCH",
-          prefer: "return=representation",
-          body: { category_id, category_source: "rule" },
-        }
-      );
-      propagated = updated ? updated.length : 0;
     }
+
+    const pattern = `*${encodeURIComponent(keyword)}*`;
+    const updated = await sb(
+      env,
+      `transactions?id=neq.${id}&category_source=neq.manual&${matchField}=ilike.${pattern}`,
+      {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: { category_id, category_source: "rule" },
+      }
+    );
+    propagated = updated ? updated.length : 0;
+
+    const loggedTxns = [
+      { id, prior_category_id: txn.category_id, prior_category_source: txn.category_source },
+      ...matches.map((m) => ({
+        id: m.id,
+        prior_category_id: m.category_id,
+        prior_category_source: m.category_source,
+      })),
+    ];
+    await logAction(
+      env,
+      "propagate_category",
+      `Categorized "${keyword}" and ${propagated} similar transaction${propagated === 1 ? "" : "s"}`,
+      { transactions: loggedTxns }
+    );
   }
 
   return json({ ok: true, propagated });
