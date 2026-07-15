@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ledger — Budget Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Household ledger</p>
+      <h1 id="monthLabel">Loading…</h1>
+    </div>
+    <div class="masthead-actions">
+      <label class="masthead-control">
+        <span class="masthead-control-label">Month</span>
+        <select id="monthPicker"></select>
+      </label>
+      <label class="masthead-control">
+        <span class="masthead-control-label">Category</span>
+        <select id="categoryFilter"></select>
+      </label>
+      <button id="clearFilterBtn" class="btn btn-quiet" hidden>× Clear filter</button>
+      <button id="uncategorizedBadge" class="btn btn-quiet uncategorized-badge" hidden></button>
+      <button id="syncBtn" class="btn btn-quiet">Sync transactions</button>
+      <button id="aiCategorizeBtn" class="btn btn-quiet">Categorize with AI</button>
+      <button id="connectBtn" class="btn btn-primary">Connect a bank</button>
+    </div>
+  </header>
+  <p class="masthead-scope-note">Month &amp; Category above apply to the Budget summary and the Transactions list below - not to Averages or Trends, which are all-time.</p>
+
+  <main>
+    <section class="tab-group" id="manageTabs">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="categories">Categories</button>
+        <button class="tab-btn" data-tab="accounts">Accounts</button>
+        <button class="tab-btn" data-tab="import-bank">Import Bank CSV</button>
+        <button class="tab-btn" data-tab="import-amazon">Import Amazon</button>
+        <button class="tab-btn" data-tab="history">History</button>
+        <button class="tab-btn" data-tab="pending-matches">Pending Matches<span id="pendingMatchesCount" class="tab-count" hidden></span></button>
+      </div>
+
+      <div class="tab-panel active" data-panel="categories">
+        <div id="categoryManageList" class="ledger-rows"></div>
+        <form id="addCategoryForm" class="add-category-form">
+          <input type="text" id="newCatName" placeholder="Category name" required />
+          <input type="number" id="newCatBudget" placeholder="Monthly budget" step="0.01" min="0" />
+          <label class="checkbox-label">
+            <input type="checkbox" id="newCatExclude" />
+            Not a budget category (income, Maaser, transfers, etc.)
+          </label>
+          <button type="submit" class="btn btn-quiet">Add category</button>
+        </form>
+      </div>
+
+      <div class="tab-panel" data-panel="accounts">
+        <div id="connectedAccountsList" class="ledger-rows"></div>
+        <button type="button" id="findTransfersBtn" class="btn btn-quiet">Find internal transfers</button>
+        <button type="button" id="findRefundsBtn" class="btn btn-quiet">Find refunded purchases</button>
+        <p class="filter-note">
+          "Find internal transfers" catches the same real expense showing up twice because money moved
+          through two connected accounts (e.g. PayPal funded by a card). "Find refunded purchases"
+          catches a charge and its own refund on the SAME account, so a canceled purchase doesn't still
+          count as spending. Both exclude the matched transactions from your budget - run either after
+          syncing new activity.
+        </p>
+      </div>
+
+      <div class="tab-panel" data-panel="import-bank">
+        <p class="filter-note">
+          Upload a CSV export from your bank or credit card. Pick which account it belongs to, map the
+          columns below, and the transactions will be added the same way a Plaid sync would - safe to
+          re-upload the same file, duplicates are merged automatically. Also automatically skips any
+          row that's already covered by a real Plaid sync, so this and your bank connection can't
+          create two copies of the same transaction.
+        </p>
+        <label>Account
+          <select id="csvAccountSelect"></select>
+        </label>
+        <input type="file" id="csvFileInput" accept=".csv" />
+        <div id="csvMappingArea" class="filters-grid" hidden>
+          <label>Date column
+            <select id="csvDateCol"></select>
+          </label>
+          <label>Description column
+            <select id="csvDescCol"></select>
+          </label>
+          <label>Amount format
+            <select id="csvAmountMode">
+              <option value="single">Single amount column (signed)</option>
+              <option value="split">Separate withdrawal + deposit columns</option>
+            </select>
+          </label>
+          <label id="csvAmountSingleWrap">Amount column
+            <select id="csvAmountCol"></select>
+          </label>
+          <label class="checkbox-label" id="csvFlipWrap">
+            <input type="checkbox" id="csvFlipSign" />
+            Flip amount sign (my CSV uses negative for spending)
+          </label>
+          <label id="csvWithdrawalWrap" hidden>Withdrawal column
+            <select id="csvWithdrawalCol"></select>
+          </label>
+          <label id="csvDepositWrap" hidden>Deposit column
+            <select id="csvDepositCol"></select>
+          </label>
+          <button type="button" id="csvImportBtn" class="btn btn-quiet">Import transactions</button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="import-amazon">
+        <p class="filter-note">
+          Upload a CSV export of your Amazon order history. Item titles get matched to your existing
+          Amazon transactions by amount + date and applied as the transaction name - your bank data
+          isn't changed, just how it displays. Never overwrites a transaction you've already renamed.
+        </p>
+        <input type="file" id="amazonFile" accept=".csv" />
+        <p class="filter-note" id="amazonPreviewNote"></p>
+        <div id="amazonMappingSection" class="filters-grid" hidden></div>
+        <button type="button" id="matchAmazonBtn" class="btn btn-quiet" hidden>Match to transactions</button>
+      </div>
+
+      <div class="tab-panel" data-panel="history">
+        <div id="recentActionsList" class="ledger-rows"></div>
+      </div>
+
+      <div class="tab-panel" data-panel="pending-matches">
+        <p class="filter-note">
+          These are possible refund or internal-transfer pairs the automatic matcher wasn't confident
+          enough to apply on its own - either the dates are further apart than usual, or there's more
+          than one equally-good candidate. Review each and accept or reject.
+        </p>
+        <div id="pendingMatchesList" class="ledger-rows"></div>
+      </div>
+    </section>
+
+    <section class="summary" id="summarySection">
+      <h2>Budget vs. actual</h2>
+      <div id="summaryList" class="ledger-rows"></div>
+    </section>
+
+    <section class="tab-group" id="viewTabs">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="chart">Spending Chart</button>
+        <button class="tab-btn" data-tab="averages">Averages</button>
+        <button class="tab-btn" data-tab="trends">Trends</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="chart">
+        <canvas id="spendingChart" height="280"></canvas>
+      </div>
+
+      <div class="tab-panel" data-panel="averages">
+        <p class="filter-note" id="insightsNote"></p>
+        <div class="insights-header">
+          <span data-sort="name">Category</span>
+          <span data-sort="average">Avg/month</span>
+          <span data-sort="min">Lowest month</span>
+          <span data-sort="max">Highest month</span>
+          <span data-sort="budget">Budget</span>
+        </div>
+        <div id="insightsTable" class="ledger-rows"></div>
+      </div>
+
+      <div class="tab-panel" data-panel="trends">
+        <div class="filters-grid">
+          <label>From<input type="date" id="trendsDateFrom" /></label>
+          <label>To<input type="date" id="trendsDateTo" /></label>
+          <button type="button" id="clearTrendsRange" class="btn btn-quiet">All time</button>
+        </div>
+        <p class="filter-note">This date range only affects the Trends chart below - it's independent of the Month picker and Transaction filters.</p>
+        <div id="trendsStats" class="trends-stats"></div>
+        <canvas id="trendsChart" height="280"></canvas>
+      </div>
+    </section>
+
+    <section class="transactions">
+      <div class="section-header">
+        <h2>Transactions</h2>
+        <select id="txnSort">
+          <option value="date-desc">Newest first</option>
+          <option value="date-asc">Oldest first</option>
+          <option value="amount-desc">Amount: high to low</option>
+          <option value="amount-asc">Amount: low to high</option>
+        </select>
+        <input type="text" id="searchBox" placeholder="Search transactions..." class="search-box" />
+        <button id="exportPdfBtn" class="btn btn-quiet">Export PDF</button>
+      </div>
+
+      <details class="txn-filters" open>
+        <summary>Filter this list</summary>
+        <div class="filters-grid">
+          <label>From<input type="date" id="filterDateFrom" /></label>
+          <label>To<input type="date" id="filterDateTo" /></label>
+          <label>Type
+            <select id="filterType">
+              <option value="">All</option>
+              <option value="withdrawal">Withdrawals only</option>
+              <option value="deposit">Deposits only</option>
+            </select>
+          </label>
+          <label>Min amount<input type="number" id="filterMinAmount" step="0.01" min="0" placeholder="0.00" /></label>
+          <label>Max amount<input type="number" id="filterMaxAmount" step="0.01" min="0" placeholder="No limit" /></label>
+          <label>Account
+            <select id="filterAccount"><option value="">All accounts</option></select>
+          </label>
+          <button type="button" id="clearAdvancedFilters" class="btn btn-quiet">Clear filters</button>
+        </div>
+        <p class="filter-note">These only affect the transaction list below. A date range here overrides the Month picker above (search always overrides both). Doesn't affect Budget, Chart, Averages, or Trends.</p>
+      </details>
+
+      <div class="bulk-toolbar">
+        <label class="checkbox-label">
+          <input type="checkbox" id="selectAllTxns" />
+          Select all shown
+        </label>
+        <button type="button" id="deleteSelectedBtn" class="btn btn-danger" hidden>Delete selected (0)</button>
+      </div>
+      <div id="txnList" class="ledger-rows"></div>
+    </section>
+  </main>
+
+  <div id="statusBar" class="status-bar" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
