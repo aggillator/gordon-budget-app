@@ -50,6 +50,12 @@
       <details>
         <summary>Connected accounts</summary>
         <div id="connectedAccountsList" class="ledger-rows"></div>
+        <button type="button" id="findTransfersBtn" class="btn btn-quiet">Find internal transfers</button>
+        <p class="filter-note">
+          Run this after syncing if you use PayPal funded by a connected card - it catches the same
+          real expense showing up twice (once on each account) and marks the duplicate side as an
+          internal transfer, excluded from your budget.
+        </p>
       </details>
     </section>
 

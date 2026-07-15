@@ -938,6 +938,22 @@ async function runAiCategorize() {
   return { totalCategorized, newCategories: [...allNewCategories] };
 }
 
+document.getElementById("findTransfersBtn").addEventListener("click", async () => {
+  showStatus("Looking for internal transfers...", 15000);
+  const res = await fetch("/api/find-transfers", { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) {
+    showStatus(`Failed: ${data.error}`, 6000);
+    return;
+  }
+  showStatus(
+    data.marked
+      ? `Found and excluded ${data.marked} internal transfer${data.marked === 1 ? "" : "s"}`
+      : "No new internal transfers found"
+  );
+  refresh();
+});
+
 document.getElementById("syncBtn").addEventListener("click", async () => {
   try {
     const { totalAdded, totalModified } = await runFullSync();
