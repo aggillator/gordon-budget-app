@@ -30,9 +30,16 @@
   </header>
 
   <main>
-    <section class="manage">
-      <details>
-        <summary>Manage categories</summary>
+    <section class="tab-group" id="manageTabs">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="categories">Categories</button>
+        <button class="tab-btn" data-tab="accounts">Accounts</button>
+        <button class="tab-btn" data-tab="import-bank">Import Bank CSV</button>
+        <button class="tab-btn" data-tab="import-amazon">Import Amazon</button>
+        <button class="tab-btn" data-tab="history">History</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="categories">
         <div id="categoryManageList" class="ledger-rows"></div>
         <form id="addCategoryForm" class="add-category-form">
           <input type="text" id="newCatName" placeholder="Category name" required />
@@ -43,12 +50,9 @@
           </label>
           <button type="submit" class="btn btn-quiet">Add category</button>
         </form>
-      </details>
-    </section>
+      </div>
 
-    <section class="connected-accounts">
-      <details>
-        <summary>Connected accounts</summary>
+      <div class="tab-panel" data-panel="accounts">
         <div id="connectedAccountsList" class="ledger-rows"></div>
         <button type="button" id="findTransfersBtn" class="btn btn-quiet">Find internal transfers</button>
         <p class="filter-note">
@@ -56,34 +60,9 @@
           real expense showing up twice (once on each account) and marks the duplicate side as an
           internal transfer, excluded from your budget.
         </p>
-      </details>
-    </section>
+      </div>
 
-    <section class="recent-actions">
-      <details id="recentActionsDetails">
-        <summary>Recent actions</summary>
-        <div id="recentActionsList" class="ledger-rows"></div>
-      </details>
-    </section>
-
-    <section class="amazon-import">
-      <details>
-        <summary>Import Amazon order history</summary>
-        <p class="filter-note">
-          Upload a CSV export of your Amazon order history. Item titles get matched to your existing
-          Amazon transactions by amount + date and applied as the transaction name - your bank data
-          isn't changed, just how it displays. Never overwrites a transaction you've already renamed.
-        </p>
-        <input type="file" id="amazonFile" accept=".csv" />
-        <p class="filter-note" id="amazonPreviewNote"></p>
-        <div id="amazonMappingSection" class="filters-grid" hidden></div>
-        <button type="button" id="matchAmazonBtn" class="btn btn-quiet" hidden>Match to transactions</button>
-      </details>
-    </section>
-
-    <section class="csv-import">
-      <details>
-        <summary>Import bank CSV</summary>
+      <div class="tab-panel" data-panel="import-bank">
         <p class="filter-note">
           Upload a CSV export from your bank or credit card. Pick which account it belongs to, map the
           columns below, and the transactions will be added the same way a Plaid sync would - safe to
@@ -123,12 +102,38 @@
           </label>
           <button type="button" id="csvImportBtn" class="btn btn-quiet">Import transactions</button>
         </div>
-      </details>
+      </div>
+
+      <div class="tab-panel" data-panel="import-amazon">
+        <p class="filter-note">
+          Upload a CSV export of your Amazon order history. Item titles get matched to your existing
+          Amazon transactions by amount + date and applied as the transaction name - your bank data
+          isn't changed, just how it displays. Never overwrites a transaction you've already renamed.
+        </p>
+        <input type="file" id="amazonFile" accept=".csv" />
+        <p class="filter-note" id="amazonPreviewNote"></p>
+        <div id="amazonMappingSection" class="filters-grid" hidden></div>
+        <button type="button" id="matchAmazonBtn" class="btn btn-quiet" hidden>Match to transactions</button>
+      </div>
+
+      <div class="tab-panel" data-panel="history">
+        <div id="recentActionsList" class="ledger-rows"></div>
+      </div>
     </section>
 
-    <section class="filters">
-      <details>
-        <summary>Advanced filters</summary>
+    <section class="summary" id="summarySection">
+      <h2>Budget vs. actual</h2>
+      <div id="summaryList" class="ledger-rows"></div>
+    </section>
+
+    <section class="tab-group" id="viewTabs">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="filters">Filters</button>
+        <button class="tab-btn" data-tab="chart">Spending Chart</button>
+        <button class="tab-btn" data-tab="averages">Averages</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="filters">
         <div class="filters-grid">
           <label>From<input type="date" id="filterDateFrom" /></label>
           <label>To<input type="date" id="filterDateTo" /></label>
@@ -147,17 +152,13 @@
           <button type="button" id="clearAdvancedFilters" class="btn btn-quiet">Clear filters</button>
         </div>
         <p class="filter-note">A date range here overrides the month picker above (search always overrides both).</p>
-      </details>
-    </section>
+      </div>
 
-    <section class="summary" id="summarySection">
-      <h2>Budget vs. actual</h2>
-      <div id="summaryList" class="ledger-rows"></div>
-    </section>
+      <div class="tab-panel" data-panel="chart">
+        <canvas id="spendingChart" height="280"></canvas>
+      </div>
 
-    <section class="insights">
-      <details id="insightsDetails">
-        <summary>Spending averages</summary>
+      <div class="tab-panel" data-panel="averages">
         <p class="filter-note" id="insightsNote"></p>
         <div class="insights-header">
           <span data-sort="name">Category</span>
@@ -167,14 +168,7 @@
           <span data-sort="budget">Budget</span>
         </div>
         <div id="insightsTable" class="ledger-rows"></div>
-      </details>
-    </section>
-
-    <section class="chart-section">
-      <details id="chartDetails">
-        <summary>Spending breakdown chart</summary>
-        <canvas id="spendingChart" height="280"></canvas>
-      </details>
+      </div>
     </section>
 
     <section class="transactions">

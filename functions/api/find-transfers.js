@@ -1,15 +1,22 @@
 import { json, sb } from "../_utils.js";
 
-// Finds pass-through internal transfers: the same real expense showing up
-// as two separate transactions because money moved through two connected
-// accounts (e.g. PayPal funded by Amex, then PayPal pays the merchant).
-// Matches same amount + different account + within 2 days, then decides
-// which side to keep:
-// - if one side literally says "Add Money"/"Amex Send" (pure funding, no
-//   recipient info), that side is excluded and the other is kept
-// - otherwise, a "Payment to X" (PayPal-style) name is excluded in favor
-//   of the side with a real merchant name
-// Ambiguous pairs (neither rule applies) are left alone rather than guessed.
+// Finds pass-through internal transfers: the same real expense (or its
+// refund) showing up as two separate transactions because money moved
+// through two connected accounts (e.g. PayPal funded by Amex, then PayPal
+// pays the merchant - or the reverse on a refund). Matches same amount
+// (any sign - charges AND refunds) + different account + within 2 days.
+//
+// Default: whichever side belongs to a PayPal-type account is excluded,
+// since the other side usually carries the real merchant name. Exception:
+// if the OTHER (non-PayPal) side's name is generic funding language ("Add
+// Money", "Amex Send", "Mobile Payment") with no recipient info, that side
+// is excluded instead and PayPal's is kept - this matters for person-to-
+// person transfers, where only PayPal's "Payment to <name>" / "Refund from
+// <name>" identifies who the money actually went to or came from.
+// Pairs where neither side is a known PayPal-type account are skipped
+// rather than guessed - there's no reliable signal for which side to drop.
+const FUNDING_PATTERN = /add money|amex send|mobile payment/i;
+
 export async function onRequestPost({ env }) {
   try {
     let transferCat = await sb(env, `categories?name=eq.Internal Transfer&select=id`);
@@ -31,9 +38,12 @@ export async function onRequestPost({ env }) {
       categoryId = created.id;
     }
 
+    const paypalAccounts = await sb(env, `accounts?subtype=eq.paypal&select=id`);
+    const paypalAccountIds = new Set(paypalAccounts.map((a) => a.id));
+
     const txns = await sb(
       env,
-      `transactions?select=id,account_id,date,amount,name&amount=gt.0&category_id=neq.${categoryId}&order=date.asc&limit=5000`
+      `transactions?select=id,account_id,date,amount,name&category_id=neq.${categoryId}&order=date.asc&limit=5000`
     );
 
     const byAmount = {};
@@ -55,24 +65,18 @@ export async function onRequestPost({ env }) {
           const diffDays = Math.abs(new Date(a.date) - new Date(b.date)) / 86400000;
           if (diffDays > 2) continue;
 
-          const aFunding = /add money|amex send/i.test(a.name);
-          const bFunding = /add money|amex send/i.test(b.name);
-          let excludeId = null;
-          if (aFunding) excludeId = a.id;
-          else if (bFunding) excludeId = b.id;
-          else {
-            const aPaypalStyle = /^payment to /i.test(a.name);
-            const bPaypalStyle = /^payment to /i.test(b.name);
-            if (aPaypalStyle && !bPaypalStyle) excludeId = a.id;
-            else if (bPaypalStyle && !aPaypalStyle) excludeId = b.id;
-          }
+          const aIsPaypal = paypalAccountIds.has(a.account_id);
+          const bIsPaypal = paypalAccountIds.has(b.account_id);
+          if (!aIsPaypal && !bIsPaypal) continue; // no reliable signal, skip
 
-          if (excludeId) {
-            toExclude.push(excludeId);
-            used.add(a.id);
-            used.add(b.id);
-            break;
-          }
+          const paypalSide = aIsPaypal ? a : b;
+          const otherSide = aIsPaypal ? b : a;
+          const excludeId = FUNDING_PATTERN.test(otherSide.name) ? otherSide.id : paypalSide.id;
+
+          toExclude.push(excludeId);
+          used.add(a.id);
+          used.add(b.id);
+          break;
         }
       }
     }

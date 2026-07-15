@@ -13,7 +13,6 @@ const filterType = document.getElementById("filterType");
 const filterMinAmount = document.getElementById("filterMinAmount");
 const filterMaxAmount = document.getElementById("filterMaxAmount");
 const filterAccount = document.getElementById("filterAccount");
-const chartDetails = document.getElementById("chartDetails");
 
 let categories = [];
 let accounts = [];
@@ -97,6 +96,34 @@ function showStatus(msg, ms = 3000) {
   setTimeout(() => (statusBar.hidden = true), ms);
 }
 
+function isTabActive(panelName) {
+  const panel = document.querySelector(`.tab-panel[data-panel="${panelName}"]`);
+  return panel ? panel.classList.contains("active") : false;
+}
+
+function setupTabGroups() {
+  document.querySelectorAll(".tab-group").forEach((group) => {
+    const buttons = group.querySelectorAll(".tab-btn");
+    const panels = group.querySelectorAll(".tab-panel");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        const target = group.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`);
+        if (target) target.classList.add("active");
+        document.dispatchEvent(new CustomEvent("tabshown", { detail: { tab: btn.dataset.tab } }));
+      });
+    });
+  });
+}
+
+document.addEventListener("tabshown", (e) => {
+  if (e.detail.tab === "averages") loadInsights();
+  if (e.detail.tab === "history") loadRecentActions();
+  if (e.detail.tab === "chart") loadSummary(monthPicker.value);
+});
+
 function sortedCategoriesAlpha() {
   return [...categories].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -146,7 +173,7 @@ async function loadSummary(month) {
     summaryList.appendChild(row);
   }
 
-  if (chartDetails.open) renderSpendingChart(summary);
+  if (isTabActive("chart")) renderSpendingChart(summary);
 }
 
 function renderSpendingChart(summary) {
@@ -478,10 +505,6 @@ document.querySelectorAll(".insights-header span").forEach((el) => {
     }
     loadInsights();
   });
-});
-
-document.getElementById("insightsDetails").addEventListener("toggle", (e) => {
-  if (e.target.open) loadInsights();
 });
 
 async function loadConnectedAccounts() {
@@ -828,10 +851,6 @@ async function loadRecentActions() {
   });
 }
 
-document.getElementById("recentActionsDetails").addEventListener("toggle", (e) => {
-  if (e.target.open) loadRecentActions();
-});
-
 async function refresh() {
   const month = monthPicker.value;
   monthLabel.textContent = monthName(month);
@@ -840,8 +859,8 @@ async function refresh() {
   await loadConnectedAccounts();
   await loadSummary(month);
   await loadTransactions(month);
-  if (document.getElementById("insightsDetails").open) loadInsights();
-  if (document.getElementById("recentActionsDetails").open) loadRecentActions();
+  if (isTabActive("averages")) loadInsights();
+  if (isTabActive("history")) loadRecentActions();
 }
 
 monthPicker.addEventListener("change", refresh);
@@ -879,10 +898,6 @@ document.getElementById("clearAdvancedFilters").addEventListener("click", () => 
   filterMaxAmount.value = "";
   filterAccount.value = "";
   loadTransactions(monthPicker.value);
-});
-
-chartDetails.addEventListener("toggle", () => {
-  if (chartDetails.open) loadSummary(monthPicker.value);
 });
 
 document.getElementById("addCategoryForm").addEventListener("submit", async (e) => {
@@ -1001,6 +1016,7 @@ document.getElementById("connectBtn").addEventListener("click", async () => {
   handler.open();
 });
 
+setupTabGroups();
 populateMonthPicker().then(refresh);
 
 async function exportPdf() {

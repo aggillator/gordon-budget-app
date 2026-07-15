@@ -260,31 +260,57 @@ h2 {
   min-width: 220px;
 }
 
-.manage details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
+.tab-group {
+  border: 1px solid var(--paper-line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--paper);
 }
 
-.manage summary {
-  cursor: pointer;
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--ink);
+  background: rgba(27, 42, 74, 0.03);
+}
+
+.tab-btn {
+  flex: 1 1 auto;
+  min-width: fit-content;
+  padding: 12px 18px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--paper-line);
   font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
-}
-
-.filters details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.filters summary,
-.chart-section summary {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink-soft);
   cursor: pointer;
-  font-family: 'Fraunces', serif;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.tab-btn:last-child { border-right: none; }
+
+.tab-btn:hover {
+  background: rgba(27, 42, 74, 0.06);
+  color: var(--ink);
+}
+
+.tab-btn.active {
+  background: var(--paper);
+  color: var(--ink);
   font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.tab-panel {
+  display: none;
+  padding: 20px;
+}
+
+.tab-panel.active {
+  display: block;
 }
 
 .filters-grid {
@@ -321,27 +347,9 @@ h2 {
   font-style: italic;
 }
 
-.chart-section details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.chart-section canvas {
-  margin-top: 10px;
+.tab-panel canvas {
+  margin-top: 4px;
   max-height: 320px;
-}
-
-.connected-accounts details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.connected-accounts summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
 }
 
 .connected-item {
@@ -360,19 +368,6 @@ h2 {
   font-size: 12px;
   color: var(--ink-soft);
   grid-column: 1 / -1;
-}
-
-.insights details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.insights summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
 }
 
 .insights-header,
@@ -420,20 +415,7 @@ h2 {
 
 .insight-row .over-budget { color: var(--over); }
 
-.amazon-import details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.amazon-import summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
-}
-
-.amazon-import input[type="file"] {
+.tab-panel input[type="file"] {
   margin: 10px 0;
   font-size: 13px;
 }
@@ -442,34 +424,17 @@ h2 {
   margin-top: 10px;
 }
 
-.csv-import details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.csv-import summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
-}
-
-.csv-import input[type="file"] {
-  margin: 10px 0;
-  font-size: 13px;
-}
-
-.csv-import > details > label {
+.tab-panel > label {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: var(--ink-soft);
   max-width: 260px;
+  margin-bottom: 10px;
 }
 
-.csv-import select {
+.tab-panel select {
   padding: 7px 9px;
   border: 1px solid var(--ink);
   border-radius: 3px;
@@ -481,19 +446,6 @@ h2 {
 
 #csvImportBtn {
   margin-top: 6px;
-}
-
-.recent-actions details {
-  border-top: 1px solid var(--paper-line);
-  padding-top: 14px;
-}
-
-.recent-actions summary {
-  cursor: pointer;
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 10px;
 }
 
 .action-log-row {
