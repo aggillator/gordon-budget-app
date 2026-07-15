@@ -6,6 +6,13 @@ import { json, sb } from "../_utils.js";
 // transaction to the item title(s). Never touches a transaction that
 // already has a custom_name - that's treated as already labeled, by you or
 // a previous import run.
+//
+// Two-pass matching: first try the full order total against one
+// transaction. If that fails, fall back to matching each item in the order
+// individually - Amazon frequently splits one order into several separate
+// charges as items ship at different times, so the combined total often
+// won't equal any single real transaction even though every item in it
+// does correspond to one.
 export async function onRequestPost({ request, env }) {
   try {
     const { orders } = await request.json();
@@ -22,18 +29,12 @@ export async function onRequestPost({ request, env }) {
     let matched = 0;
     const unmatched = [];
 
-    for (const order of orders) {
-      if (!order.date || !order.amount) {
-        unmatched.push(order);
-        continue;
-      }
-      const orderDate = new Date(order.date);
+    function findMatch(orderDate, amount) {
       let best = null;
       let bestDiff = Infinity;
-
       for (const t of candidates) {
         if (used.has(t.id)) continue;
-        if (Math.abs(Math.abs(t.amount) - order.amount) > 0.02) continue;
+        if (Math.abs(Math.abs(t.amount) - amount) > 0.02) continue;
         const dateDiff = Math.abs(new Date(t.date) - orderDate) / 86400000;
         if (dateDiff > 10) continue;
         if (dateDiff < bestDiff) {
@@ -41,17 +42,47 @@ export async function onRequestPost({ request, env }) {
           best = t;
         }
       }
+      return best;
+    }
 
-      if (best) {
-        used.add(best.id);
-        await sb(env, `transactions?id=eq.${best.id}`, {
-          method: "PATCH",
-          body: { custom_name: order.title },
-        });
-        matched++;
-      } else {
+    for (const order of orders) {
+      if (!order.date) {
         unmatched.push(order);
+        continue;
       }
+      const orderDate = new Date(order.date);
+      let matchedAny = false;
+
+      if (order.amount) {
+        const best = findMatch(orderDate, order.amount);
+        if (best) {
+          used.add(best.id);
+          await sb(env, `transactions?id=eq.${best.id}`, {
+            method: "PATCH",
+            body: { custom_name: order.title },
+          });
+          matched++;
+          matchedAny = true;
+        }
+      }
+
+      if (!matchedAny && Array.isArray(order.items) && order.items.length > 1) {
+        for (const item of order.items) {
+          if (!item.amount) continue;
+          const best = findMatch(orderDate, item.amount);
+          if (best) {
+            used.add(best.id);
+            await sb(env, `transactions?id=eq.${best.id}`, {
+              method: "PATCH",
+              body: { custom_name: item.title },
+            });
+            matched++;
+            matchedAny = true;
+          }
+        }
+      }
+
+      if (!matchedAny) unmatched.push(order);
     }
 
     return json({

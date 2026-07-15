@@ -408,10 +408,12 @@ document.getElementById("matchAmazonBtn").addEventListener("click", async () => 
   amazonRows.forEach((row, i) => {
     const idPart = orderIdCol ? row[orderIdCol] : `row-${i}`;
     const key = `${idPart}|${row[dateCol]}`;
-    if (!groups[key]) groups[key] = { date: row[dateCol], titles: [], amount: 0 };
+    if (!groups[key]) groups[key] = { date: row[dateCol], titles: [], amount: 0, items: [] };
     const amt = parseFloat(String(row[amountCol]).replace(/[^0-9.-]/g, "")) || 0;
-    groups[key].titles.push(row[titleCol]);
+    const title = row[titleCol];
+    groups[key].titles.push(title);
     groups[key].amount += amt;
+    groups[key].items.push({ title, amount: Number(amt.toFixed(2)) });
   });
 
   const allOrders = Object.values(groups)
@@ -419,6 +421,7 @@ document.getElementById("matchAmazonBtn").addEventListener("click", async () => 
       date: normalizeAmazonDate(g.date),
       title: g.titles.filter(Boolean).join(", ").slice(0, 200),
       amount: Number(g.amount.toFixed(2)),
+      items: g.items.filter((it) => it.title && it.amount),
     }))
     .filter((o) => o.date && o.amount > 0);
 
