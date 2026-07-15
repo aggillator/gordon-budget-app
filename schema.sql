@@ -26,7 +26,8 @@ create table if not exists categories (
   name text unique not null,
   monthly_budget numeric(10,2) not null default 0,
   is_fixed boolean default false,       -- true = fixed bill (rent, tuition), false = variable/discretionary
-  exclude_from_budget boolean default false, -- true = tracked but not counted (income, Maaser, transfers)
+  exclude_from_budget boolean default false, -- true = tracked but not counted in the monthly Budget vs Actual view
+  exclude_from_trends boolean default false, -- true = not counted in whole-household income/spending trends (internal transfers, card payments, etc.) - separate concern from exclude_from_budget: e.g. "Income" is excluded from budget but must NOT be excluded from trends
   sort_order int default 0
 );
 

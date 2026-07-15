@@ -25,6 +25,15 @@ const CHART_PALETTE = [
   "#7A5C8E", "#9A8B4F",
 ];
 
+// Same category always gets the same color, without needing to store one -
+// just hashes the name into the existing chart palette.
+function categoryColor(name) {
+  if (!name) return "#C0C0C0";
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return CHART_PALETTE[Math.abs(hash) % CHART_PALETTE.length];
+}
+
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -170,7 +179,7 @@ async function loadSummary(month) {
     row.dataset.id = c.id;
     row.title = "Click to filter transactions by this category";
     row.innerHTML = `
-      <div class="cat-name">${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</div>
+      <div class="cat-name"><span class="cat-dot" style="background:${categoryColor(c.name)}"></span>${c.name} ${c.is_fixed ? '<span class="badge">FIXED</span>' : ""}</div>
       <div class="cat-figures">
         <span class="${over ? "over" : "under"}">${fmt(c.actual)}</span> / ${fmt(c.budget)}
       </div>
@@ -183,6 +192,21 @@ async function loadSummary(month) {
     });
     summaryList.appendChild(row);
   }
+
+  const totalBudget = summary.reduce((s, c) => s + c.budget, 0);
+  const totalActual = summary.reduce((s, c) => s + c.actual, 0);
+  const totalPct = totalBudget > 0 ? Math.min(100, (totalActual / totalBudget) * 100) : totalActual > 0 ? 100 : 0;
+  const totalOver = totalActual > totalBudget && totalBudget > 0;
+  const totalRow = document.createElement("div");
+  totalRow.className = "cat-row cat-row-total";
+  totalRow.innerHTML = `
+    <div class="cat-name">Total</div>
+    <div class="cat-figures">
+      <span class="${totalOver ? "over" : "under"}">${fmt(totalActual)}</span> / ${fmt(totalBudget)}
+    </div>
+    <div class="bar-track"><div class="bar-fill ${totalOver ? "over" : "under"}" style="width:${totalPct}%"></div></div>
+  `;
+  summaryList.appendChild(totalRow);
 
   if (isTabActive("chart")) renderSpendingChart(summary);
 }
@@ -266,11 +290,15 @@ function renderCategoryManage() {
   categoryManageList.innerHTML = sorted
     .map(
       (c) => `
-    <div class="manage-row">
+    <div class="manage-row" style="border-left: 4px solid ${categoryColor(c.name)}; padding-left: 10px;">
       <input type="text" value="${escapeAttr(c.name)}" data-id="${c.id}" class="name-input" />
       <label class="checkbox-label manage-checkbox">
         <input type="checkbox" data-id="${c.id}" class="exclude-input" ${c.exclude_from_budget ? "checked" : ""} />
         Not in budget
+      </label>
+      <label class="checkbox-label manage-checkbox">
+        <input type="checkbox" data-id="${c.id}" class="exclude-trends-input" ${c.exclude_from_trends ? "checked" : ""} />
+        Not in trends
       </label>
       <input type="number" step="0.01" min="0" value="${c.monthly_budget}" data-id="${c.id}" class="budget-input" ${c.exclude_from_budget ? "disabled" : ""} />
       ${c.is_fixed ? '<span class="badge">FIXED</span>' : "<span></span>"}
@@ -355,6 +383,25 @@ function renderCategoryManage() {
           : "Marked as a budget category"
       );
       refresh();
+    });
+  });
+
+  categoryManageList.querySelectorAll(".exclude-trends-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      await fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: e.target.dataset.id,
+          exclude_from_trends: e.target.checked,
+        }),
+      });
+      showStatus(
+        e.target.checked
+          ? "Excluded from income/spending trends"
+          : "Included in income/spending trends"
+      );
+      if (isTabActive("trends")) loadTrends();
     });
   });
 
@@ -761,7 +808,7 @@ async function loadTransactions(month) {
         <div class="txn-source">${sourceName}</div>
       </div>
       <div class="txn-amount">${fmtTxnAmount(t.amount)}</div>
-      <select data-id="${t.id}">
+      <select data-id="${t.id}" style="border-left: 4px solid ${categoryColor(t.categories?.name)};">
         <option value="">- uncategorized -</option>
         ${categoryOptionsHtml(t.category_id)}
         <option value="${NEW_CATEGORY_VALUE}">+ New category...</option>
@@ -907,12 +954,19 @@ async function loadRecentActions() {
 let trendsChartInstance = null;
 
 async function loadTrends() {
-  const res = await fetch("/api/monthly-trends");
+  const dateFrom = document.getElementById("trendsDateFrom").value;
+  const dateTo = document.getElementById("trendsDateTo").value;
+  const params = new URLSearchParams();
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+
+  const res = await fetch(`/api/monthly-trends?${params.toString()}`);
   const { months, averages } = await res.json();
 
   const statsEl = document.getElementById("trendsStats");
   if (!months.length) {
-    statsEl.innerHTML = `<p class="empty">No transaction history yet.</p>`;
+    statsEl.innerHTML = `<p class="empty">No transaction history in this range.</p>`;
+    document.getElementById("trendsChart").getContext("2d").clearRect(0, 0, 9999, 9999);
     return;
   }
 
@@ -923,7 +977,7 @@ async function loadTrends() {
     if (previous === null || previous === 0) return "";
     const pct = ((current - previous) / Math.abs(previous)) * 100;
     const sign = pct >= 0 ? "+" : "";
-    return `<div class="delta">${sign}${pct.toFixed(0)}% vs last month</div>`;
+    return `<div class="delta">${sign}${pct.toFixed(0)}% vs previous month</div>`;
   }
 
   statsEl.innerHTML = `
@@ -940,12 +994,12 @@ async function loadTrends() {
       <span class="value ${averages.net >= 0 ? "under" : "over"}">${fmt(averages.net)}</span>
     </div>
     <div class="trends-stat">
-      <span class="label">This month income</span>
+      <span class="label">${monthName(last.month)} income</span>
       <span class="value">${fmt(last.income)}</span>
       ${prev ? deltaHtml(last.income, prev.income) : ""}
     </div>
     <div class="trends-stat">
-      <span class="label">This month spending</span>
+      <span class="label">${monthName(last.month)} spending</span>
       <span class="value">${fmt(last.spending)}</span>
       ${prev ? deltaHtml(last.spending, prev.spending) : ""}
     </div>
@@ -971,6 +1025,14 @@ async function loadTrends() {
     },
   });
 }
+
+document.getElementById("trendsDateFrom").addEventListener("change", loadTrends);
+document.getElementById("trendsDateTo").addEventListener("change", loadTrends);
+document.getElementById("clearTrendsRange").addEventListener("click", () => {
+  document.getElementById("trendsDateFrom").value = "";
+  document.getElementById("trendsDateTo").value = "";
+  loadTrends();
+});
 
 async function loadPendingMatches() {
   const res = await fetch("/api/suggested-matches");

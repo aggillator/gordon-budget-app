@@ -186,6 +186,11 @@
       </div>
 
       <div class="tab-panel" data-panel="trends">
+        <div class="filters-grid">
+          <label>From<input type="date" id="trendsDateFrom" /></label>
+          <label>To<input type="date" id="trendsDateTo" /></label>
+          <button type="button" id="clearTrendsRange" class="btn btn-quiet">All time</button>
+        </div>
         <div id="trendsStats" class="trends-stats"></div>
         <canvas id="trendsChart" height="280"></canvas>
       </div>
