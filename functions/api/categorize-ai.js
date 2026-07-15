@@ -5,7 +5,7 @@ import { json, sb, anthropic, logAction } from "../_utils.js";
 // existing category for each transaction - or propose a brand-new one if
 // nothing fits. Never touches transactions that already have a category.
 const BATCH_SIZE = 15;
-const MAX_NEW_CATEGORIES_PER_RUN = 5; // safety cap against a bad response spawning junk
+const MAX_NEW_CATEGORIES_PER_RUN = 10; // safety cap against a bad response spawning junk
 
 // Salvages whatever complete "id": "category" entries exist in a JSON object
 // that got cut off mid-string, instead of discarding the whole batch.

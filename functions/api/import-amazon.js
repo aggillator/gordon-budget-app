@@ -36,7 +36,7 @@ export async function onRequestPost({ request, env }) {
         if (used.has(t.id)) continue;
         if (Math.abs(Math.abs(t.amount) - amount) > 0.02) continue;
         const dateDiff = Math.abs(new Date(t.date) - orderDate) / 86400000;
-        if (dateDiff > 10) continue;
+        if (dateDiff > 21) continue;
         if (dateDiff < bestDiff) {
           bestDiff = dateDiff;
           best = t;

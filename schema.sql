@@ -106,6 +106,22 @@ create table if not exists action_log (
 
 create index if not exists idx_action_log_created on action_log(created_at desc);
 
+-- Queue of possible refund/transfer matches the automatic matcher wasn't
+-- confident enough to apply on its own - see find-refunds.js,
+-- find-transfers.js, and suggested-matches.js.
+create table if not exists suggested_matches (
+  id uuid primary key default gen_random_uuid(),
+  match_type text not null, -- 'transfer' | 'refund'
+  transaction_id_a uuid references transactions(id) on delete cascade,
+  transaction_id_b uuid references transactions(id) on delete cascade,
+  category_id uuid references categories(id) on delete cascade,
+  reason text,
+  created_at timestamptz default now(),
+  resolved boolean default false
+);
+
+create index if not exists idx_suggested_matches_pending on suggested_matches(resolved) where resolved = false;
+
 -- Seed categories (broad spending types, not specific merchants/brands -
 -- edit amounts any time in the app)
 insert into categories (name, monthly_budget, is_fixed, sort_order) values

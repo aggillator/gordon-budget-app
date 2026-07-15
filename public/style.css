@@ -313,6 +313,120 @@ h2 {
   display: block;
 }
 
+.uncategorized-badge {
+  border-color: var(--over);
+  color: var(--over);
+}
+
+.uncategorized-badge:hover {
+  background: var(--over);
+  color: var(--paper);
+}
+
+.trends-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.trends-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.trends-stat .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.trends-stat .value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.trends-stat .delta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.tab-count {
+  display: inline-block;
+  background: var(--over);
+  color: var(--paper);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+
+.match-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.match-reason {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.match-txns {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.match-txn {
+  font-size: 13px;
+  border-left: 2px solid var(--paper-line);
+  padding-left: 8px;
+}
+
+.match-txn .txn-line1 { font-weight: 500; }
+.match-txn .txn-line2 { color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+.match-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.match-accept, .match-reject {
+  padding: 6px 14px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.match-accept {
+  background: transparent;
+  border: 1px solid var(--under);
+  color: var(--under);
+}
+
+.match-accept:hover { background: var(--under); color: var(--paper); }
+
+.match-reject {
+  background: transparent;
+  border: 1px solid var(--ink-soft);
+  color: var(--ink-soft);
+}
+
+.match-reject:hover { background: var(--ink-soft); color: var(--paper); }
+
 .filters-grid {
   display: flex;
   flex-wrap: wrap;

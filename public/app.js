@@ -53,6 +53,7 @@ function fmtTxnAmount(amount) {
 }
 
 function monthName(m) {
+  if (m === "all") return "All Transactions";
   const [y, mo] = m.split("-").map(Number);
   return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-US", {
     month: "long",
@@ -78,7 +79,7 @@ async function populateMonthPicker() {
     // fall back to 6 months if this fails for any reason
   }
 
-  monthPicker.innerHTML = "";
+  monthPicker.innerHTML = `<option value="all">All transactions</option>`;
   for (let i = 0; i < monthsBack; i++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     const val = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -107,8 +108,10 @@ function setupTabGroups() {
     const panels = group.querySelectorAll(".tab-panel");
     buttons.forEach((btn) => {
       btn.addEventListener("click", () => {
+        const alreadyActive = btn.classList.contains("active");
         buttons.forEach((b) => b.classList.remove("active"));
         panels.forEach((p) => p.classList.remove("active"));
+        if (alreadyActive) return; // second click on the open tab just collapses it
         btn.classList.add("active");
         const target = group.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`);
         if (target) target.classList.add("active");
@@ -122,6 +125,8 @@ document.addEventListener("tabshown", (e) => {
   if (e.detail.tab === "averages") loadInsights();
   if (e.detail.tab === "history") loadRecentActions();
   if (e.detail.tab === "chart") loadSummary(monthPicker.value);
+  if (e.detail.tab === "trends") loadTrends();
+  if (e.detail.tab === "pending-matches") loadPendingMatches();
 });
 
 function sortedCategoriesAlpha() {
@@ -141,6 +146,12 @@ async function loadAccounts() {
 }
 
 async function loadSummary(month) {
+  if (month === "all") {
+    summaryList.innerHTML = `<p class="empty">Budget caps are monthly, so this view needs a specific month. Check the "Averages" tab above for all-time totals and trends instead.</p>`;
+    if (isTabActive("chart")) renderSpendingChart([]);
+    return;
+  }
+
   const res = await fetch(`/api/summary?month=${month}`);
   const { summary } = await res.json();
   summaryList.innerHTML = "";
@@ -630,7 +641,7 @@ function buildTransactionParams(month) {
   } else if (dateFrom || dateTo) {
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
-  } else {
+  } else if (month !== "all") {
     params.set("month", month);
   }
   if (categoryFilter.value) params.set("category_id", categoryFilter.value);
@@ -854,6 +865,153 @@ async function loadRecentActions() {
   });
 }
 
+let trendsChartInstance = null;
+
+async function loadTrends() {
+  const res = await fetch("/api/monthly-trends");
+  const { months, averages } = await res.json();
+
+  const statsEl = document.getElementById("trendsStats");
+  if (!months.length) {
+    statsEl.innerHTML = `<p class="empty">No transaction history yet.</p>`;
+    return;
+  }
+
+  const last = months[months.length - 1];
+  const prev = months.length > 1 ? months[months.length - 2] : null;
+
+  function deltaHtml(current, previous) {
+    if (previous === null || previous === 0) return "";
+    const pct = ((current - previous) / Math.abs(previous)) * 100;
+    const sign = pct >= 0 ? "+" : "";
+    return `<div class="delta">${sign}${pct.toFixed(0)}% vs last month</div>`;
+  }
+
+  statsEl.innerHTML = `
+    <div class="trends-stat">
+      <span class="label">Avg income/mo</span>
+      <span class="value">${fmt(averages.income)}</span>
+    </div>
+    <div class="trends-stat">
+      <span class="label">Avg spending/mo</span>
+      <span class="value">${fmt(averages.spending)}</span>
+    </div>
+    <div class="trends-stat">
+      <span class="label">Avg net/mo</span>
+      <span class="value ${averages.net >= 0 ? "under" : "over"}">${fmt(averages.net)}</span>
+    </div>
+    <div class="trends-stat">
+      <span class="label">This month income</span>
+      <span class="value">${fmt(last.income)}</span>
+      ${prev ? deltaHtml(last.income, prev.income) : ""}
+    </div>
+    <div class="trends-stat">
+      <span class="label">This month spending</span>
+      <span class="value">${fmt(last.spending)}</span>
+      ${prev ? deltaHtml(last.spending, prev.spending) : ""}
+    </div>
+  `;
+
+  const ctx = document.getElementById("trendsChart").getContext("2d");
+  if (trendsChartInstance) trendsChartInstance.destroy();
+  trendsChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: months.map((m) => monthName(m.month)),
+      datasets: [
+        { label: "Income", data: months.map((m) => m.income), backgroundColor: "#2F6B4F" },
+        { label: "Spending", data: months.map((m) => m.spending), backgroundColor: "#B3492D" },
+      ],
+    },
+    options: {
+      plugins: { legend: { position: "top", labels: { font: { family: "Inter" } } } },
+      scales: {
+        x: { ticks: { font: { family: "Inter" }, maxRotation: 45, minRotation: 45 } },
+        y: { ticks: { callback: (v) => fmt(v) } },
+      },
+    },
+  });
+}
+
+async function loadPendingMatches() {
+  const res = await fetch("/api/suggested-matches");
+  const rows = await res.json();
+  const list = document.getElementById("pendingMatchesList");
+  const countBadge = document.getElementById("pendingMatchesCount");
+
+  if (rows.length) {
+    countBadge.textContent = rows.length;
+    countBadge.hidden = false;
+  } else {
+    countBadge.hidden = true;
+  }
+
+  if (!rows.length) {
+    list.innerHTML = `<p class="empty">No pending matches right now.</p>`;
+    return;
+  }
+
+  function txnLine(t) {
+    if (!t) return `<div class="match-txn">(transaction not found)</div>`;
+    const name = t.custom_name || t.merchant_name || t.name;
+    return `
+      <div class="match-txn">
+        <div class="txn-line1">${escapeAttr(name)}</div>
+        <div class="txn-line2">${t.date} · ${fmt(t.amount)}</div>
+      </div>`;
+  }
+
+  list.innerHTML = rows
+    .map(
+      (r) => `
+    <div class="match-row" data-id="${r.id}">
+      <div class="match-reason">${r.match_type === "refund" ? "Possible refund" : "Possible transfer"} - ${escapeAttr(r.reason)} - would move to "${r.categories?.name || "?"}"</div>
+      <div class="match-txns">
+        ${txnLine(r.txn_a)}
+        ${txnLine(r.txn_b)}
+      </div>
+      <div class="match-actions">
+        <button type="button" class="match-accept" data-id="${r.id}">Accept</button>
+        <button type="button" class="match-reject" data-id="${r.id}">Reject</button>
+      </div>
+    </div>`
+    )
+    .join("");
+
+  list.querySelectorAll(".match-accept, .match-reject").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.target.dataset.id;
+      const action = e.target.classList.contains("match-accept") ? "accept" : "reject";
+      await fetch("/api/suggested-matches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+      showStatus(action === "accept" ? "Match accepted" : "Match rejected");
+      refresh();
+    });
+  });
+}
+
+async function loadUncategorizedBadge() {
+  const res = await fetch("/api/uncategorized-count");
+  const { count } = await res.json();
+  const badge = document.getElementById("uncategorizedBadge");
+  if (count > 0) {
+    badge.textContent = `${count} uncategorized`;
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+document.getElementById("uncategorizedBadge").addEventListener("click", () => {
+  monthPicker.value = "all";
+  categoryFilter.value = "unassigned";
+  refresh();
+  document.querySelector(".transactions").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 async function refresh() {
   const month = monthPicker.value;
   monthLabel.textContent = monthName(month);
@@ -862,8 +1020,11 @@ async function refresh() {
   await loadConnectedAccounts();
   await loadSummary(month);
   await loadTransactions(month);
+  await loadUncategorizedBadge();
+  await loadPendingMatches();
   if (isTabActive("averages")) loadInsights();
   if (isTabActive("history")) loadRecentActions();
+  if (isTabActive("trends")) loadTrends();
 }
 
 monthPicker.addEventListener("change", refresh);
@@ -956,6 +1117,34 @@ async function runAiCategorize() {
   return { totalCategorized, newCategories: [...allNewCategories] };
 }
 
+async function runMatchers() {
+  const [refundRes, transferRes] = await Promise.all([
+    fetch("/api/find-refunds", { method: "POST" }),
+    fetch("/api/find-transfers", { method: "POST" }),
+  ]);
+  const refundData = await refundRes.json();
+  const transferData = await transferRes.json();
+  return {
+    marked: (refundData.marked || 0) + (transferData.marked || 0),
+    suggested: (refundData.suggested || 0) + (transferData.suggested || 0),
+  };
+}
+
+document.getElementById("findRefundsBtn").addEventListener("click", async () => {
+  showStatus("Looking for refunded purchases...", 15000);
+  const res = await fetch("/api/find-refunds", { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) {
+    showStatus(`Failed: ${data.error}`, 6000);
+    return;
+  }
+  const parts = [];
+  if (data.marked) parts.push(`excluded ${data.marked}`);
+  if (data.suggested) parts.push(`${data.suggested} pending review`);
+  showStatus(parts.length ? `Refunded purchases: ${parts.join(", ")}` : "No new refunded purchases found");
+  refresh();
+});
+
 document.getElementById("findTransfersBtn").addEventListener("click", async () => {
   showStatus("Looking for internal transfers...", 15000);
   const res = await fetch("/api/find-transfers", { method: "POST" });
@@ -964,18 +1153,21 @@ document.getElementById("findTransfersBtn").addEventListener("click", async () =
     showStatus(`Failed: ${data.error}`, 6000);
     return;
   }
-  showStatus(
-    data.marked
-      ? `Found and excluded ${data.marked} internal transfer${data.marked === 1 ? "" : "s"}`
-      : "No new internal transfers found"
-  );
+  const parts = [];
+  if (data.marked) parts.push(`excluded ${data.marked}`);
+  if (data.suggested) parts.push(`${data.suggested} pending review`);
+  showStatus(parts.length ? `Internal transfers: ${parts.join(", ")}` : "No new internal transfers found");
   refresh();
 });
 
 document.getElementById("syncBtn").addEventListener("click", async () => {
   try {
     const { totalAdded, totalModified } = await runFullSync();
-    showStatus(`Synced - ${totalAdded} new, ${totalModified} updated`);
+    const { marked, suggested } = await runMatchers();
+    let msg = `Synced - ${totalAdded} new, ${totalModified} updated`;
+    if (marked) msg += `, ${marked} transfer/refund${marked === 1 ? "" : "s"} auto-excluded`;
+    if (suggested) msg += `, ${suggested} pending your review`;
+    showStatus(msg, 6000);
     refresh();
   } catch (err) {
     showStatus(`Sync failed: ${err.message}`, 6000);
@@ -1012,6 +1204,7 @@ document.getElementById("connectBtn").addEventListener("click", async () => {
       });
       showStatus("Bank connected - syncing now...", 60000);
       const { totalAdded } = await runFullSync();
+      await runMatchers();
       showStatus(`Connected - pulled ${totalAdded} transactions`);
       refresh();
     },
@@ -1044,32 +1237,37 @@ async function exportPdf() {
   doc.text(subtitle, 14, 25);
 
   // Budget vs. actual (always reflects the selected month, regardless of
-  // any other filter applied to the transaction list below)
-  const summaryRes = await fetch(`/api/summary?month=${month}`);
-  const { summary } = await summaryRes.json();
-  doc.autoTable({
-    startY: 32,
-    head: [["Category", "Budget", "Actual", "Difference"]],
-    body: summary.map((c) => {
-      const diff = c.budget - c.actual;
-      return [
-        c.name,
-        fmt(c.budget),
-        fmt(c.actual),
-        diff >= 0 ? `${fmt(diff)} under` : `${fmt(-diff)} over`,
-      ];
-    }),
-    theme: "striped",
-    headStyles: { fillColor: [27, 42, 74] },
-    styles: { fontSize: 9 },
-  });
+  // any other filter applied to the transaction list below) - skipped for
+  // "All transactions" since budget caps are inherently monthly
+  let nextY = 32;
+  if (month !== "all") {
+    const summaryRes = await fetch(`/api/summary?month=${month}`);
+    const { summary } = await summaryRes.json();
+    doc.autoTable({
+      startY: 32,
+      head: [["Category", "Budget", "Actual", "Difference"]],
+      body: summary.map((c) => {
+        const diff = c.budget - c.actual;
+        return [
+          c.name,
+          fmt(c.budget),
+          fmt(c.actual),
+          diff >= 0 ? `${fmt(diff)} under` : `${fmt(-diff)} over`,
+        ];
+      }),
+      theme: "striped",
+      headStyles: { fillColor: [27, 42, 74] },
+      styles: { fontSize: 9 },
+    });
+    nextY = doc.lastAutoTable.finalY + 10;
+  }
 
   // Transaction list - respects every active filter (search, category,
   // date range, account, type, amount range)
   const txns = await fetchFilteredTransactions(month);
 
   doc.autoTable({
-    startY: doc.lastAutoTable.finalY + 10,
+    startY: nextY,
     head: [["Date", "Description", "Category", "Account", "Amount"]],
     body: txns.map((t) => {
       const isDeposit = t.amount < 0;

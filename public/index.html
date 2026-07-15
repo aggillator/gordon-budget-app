@@ -23,6 +23,7 @@
       <select id="monthPicker"></select>
       <select id="categoryFilter"></select>
       <button id="clearFilterBtn" class="btn btn-quiet" hidden>× Clear filter</button>
+      <button id="uncategorizedBadge" class="btn btn-quiet uncategorized-badge" hidden></button>
       <button id="syncBtn" class="btn btn-quiet">Sync transactions</button>
       <button id="aiCategorizeBtn" class="btn btn-quiet">Categorize with AI</button>
       <button id="connectBtn" class="btn btn-primary">Connect a bank</button>
@@ -37,6 +38,7 @@
         <button class="tab-btn" data-tab="import-bank">Import Bank CSV</button>
         <button class="tab-btn" data-tab="import-amazon">Import Amazon</button>
         <button class="tab-btn" data-tab="history">History</button>
+        <button class="tab-btn" data-tab="pending-matches">Pending Matches<span id="pendingMatchesCount" class="tab-count" hidden></span></button>
       </div>
 
       <div class="tab-panel active" data-panel="categories">
@@ -55,10 +57,13 @@
       <div class="tab-panel" data-panel="accounts">
         <div id="connectedAccountsList" class="ledger-rows"></div>
         <button type="button" id="findTransfersBtn" class="btn btn-quiet">Find internal transfers</button>
+        <button type="button" id="findRefundsBtn" class="btn btn-quiet">Find refunded purchases</button>
         <p class="filter-note">
-          Run this after syncing if you use PayPal funded by a connected card - it catches the same
-          real expense showing up twice (once on each account) and marks the duplicate side as an
-          internal transfer, excluded from your budget.
+          "Find internal transfers" catches the same real expense showing up twice because money moved
+          through two connected accounts (e.g. PayPal funded by a card). "Find refunded purchases"
+          catches a charge and its own refund on the SAME account, so a canceled purchase doesn't still
+          count as spending. Both exclude the matched transactions from your budget - run either after
+          syncing new activity.
         </p>
       </div>
 
@@ -119,6 +124,15 @@
       <div class="tab-panel" data-panel="history">
         <div id="recentActionsList" class="ledger-rows"></div>
       </div>
+
+      <div class="tab-panel" data-panel="pending-matches">
+        <p class="filter-note">
+          These are possible refund or internal-transfer pairs the automatic matcher wasn't confident
+          enough to apply on its own - either the dates are further apart than usual, or there's more
+          than one equally-good candidate. Review each and accept or reject.
+        </p>
+        <div id="pendingMatchesList" class="ledger-rows"></div>
+      </div>
     </section>
 
     <section class="summary" id="summarySection">
@@ -131,6 +145,7 @@
         <button class="tab-btn active" data-tab="filters">Filters</button>
         <button class="tab-btn" data-tab="chart">Spending Chart</button>
         <button class="tab-btn" data-tab="averages">Averages</button>
+        <button class="tab-btn" data-tab="trends">Trends</button>
       </div>
 
       <div class="tab-panel active" data-panel="filters">
@@ -168,6 +183,11 @@
           <span data-sort="budget">Budget</span>
         </div>
         <div id="insightsTable" class="ledger-rows"></div>
+      </div>
+
+      <div class="tab-panel" data-panel="trends">
+        <div id="trendsStats" class="trends-stats"></div>
+        <canvas id="trendsChart" height="280"></canvas>
       </div>
     </section>
 
