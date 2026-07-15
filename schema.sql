@@ -47,6 +47,7 @@ create table if not exists transactions (
   category_id uuid references categories(id),
   category_source text default 'unassigned', -- 'auto' | 'manual' | 'unassigned' | 'ai' | 'rule'
   custom_name text, -- user-set display name override, e.g. from the Amazon import - never touched by sync
+  plaid_category text, -- Plaid's own merchant-categorization engine output, when provided - fed to the AI categorizer as an extra hint
   pending boolean default false,
   created_at timestamptz default now()
 );

@@ -1103,7 +1103,7 @@ async function runAiCategorize() {
     rounds = 0,
     allNewCategories = new Set();
 
-  while (hasMore && rounds < 15) {
+  while (hasMore && rounds < 60) {
     rounds++;
     showStatus(`AI categorizing... (${totalCategorized} done)`, 60000);
     const res = await fetch("/api/categorize-ai", { method: "POST" });

@@ -41,6 +41,7 @@ export async function onRequestPost({ env }) {
           merchant_name: t.merchant_name,
           amount: t.amount,
           pending: t.pending,
+          plaid_category: t.personal_finance_category?.detailed || t.personal_finance_category?.primary || null,
           category_id,
           category_source: category_id ? "auto" : "unassigned",
         });
@@ -69,6 +70,7 @@ export async function onRequestPost({ env }) {
           merchant_name: t.merchant_name,
           amount: t.amount,
           pending: t.pending,
+          plaid_category: t.personal_finance_category?.detailed || t.personal_finance_category?.primary || null,
         });
       }
       if (modifiedRows.length) {

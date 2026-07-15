@@ -43,15 +43,23 @@ export async function onRequestPost({ env }) {
     const categoryList = categories.map((c) => c.name).join(", ");
     // Prefer custom_name (e.g. an actual item title from the Amazon import)
     // over the generic merchant name when available - "USB Cable" gives the
-    // model far more to work with than "Amazon".
+    // model far more to work with than "Amazon". plaid_category is the
+    // bank's own merchant-categorization engine (e.g. "FOOD_AND_DRINK_FAST_
+    // FOOD") when Plaid provided one at sync time - a strong extra hint for
+    // well-known chains the model might not otherwise recognize.
     const txnList = unassigned
-      .map((t) => `${t.id}|${t.custom_name || t.merchant_name || t.name}|$${t.amount}`)
+      .map((t) => {
+        const desc = t.custom_name || t.merchant_name || t.name;
+        const hint = t.plaid_category ? `|bank category hint: ${t.plaid_category}` : "";
+        return `${t.id}|${desc}|$${t.amount}${hint}`;
+      })
       .join("\n");
 
     const prompt = `Existing categories (prefer these, use the EXACT string if you use one): ${categoryList}
 
-For each transaction below (format: id|merchant or description|amount), pick the best-fitting category.
+For each transaction below (format: id|merchant or description|amount|optional bank category hint), pick the best-fitting category.
 - If an existing category fits reasonably well, use it - copy its name exactly as written above.
+- The bank category hint (when present) is the bank's own categorization for that merchant - a strong signal, especially for well-known chains. Use it to inform your choice, but still map it to the closest fitting category from the list above rather than copying its wording.
 - Categories describe a TYPE of spending, never a specific brand, app, or merchant. "Eating Out" not "Dunkin", "Food Delivery" not "Uber Eats", "Insurance" not "Life Insurance", "Rideshare" not "Uber". Ask: would this category still make sense if the transaction were from a totally different company doing the same kind of thing? If not, it's too specific.
 - If NONE of the existing categories fit, propose ONE short, general new category name for it (2-3 words, a broad spending type per the rule above). Only propose a new category when you're confident it represents a recurring type of spending, not a one-off. Reuse the same new category name for similar transactions in this batch rather than inventing near-duplicates.
 - If truly nothing sensible fits, use "Uncategorized".
@@ -152,6 +160,39 @@ Respond with ONLY a single-line, compact JSON object mapping transaction id to c
         `AI categorized ${rows.length} transaction${rows.length === 1 ? "" : "s"}`,
         { transactions: loggedTxns }
       );
+
+      // If a merchant now has 2+ CONSISTENT AI categorizations (same
+      // category every time), promote that to a keyword rule so future
+      // syncs of the same merchant are instantly auto-categorized instead
+      // of piling up as unassigned until the next AI run. Only promotes
+      // when consistent - a merchant AI has categorized differently across
+      // runs is left alone rather than locking in a guess.
+      const distinctMerchants = [...new Set(rows.map((r) => r.merchant_name).filter(Boolean))];
+      for (const merchant of distinctMerchants) {
+        const priorAi = await sb(
+          env,
+          `transactions?merchant_name=eq.${encodeURIComponent(merchant)}&category_source=eq.ai&select=category_id`
+        );
+        const catIds = new Set(priorAi.map((t) => t.category_id));
+        if (catIds.size === 1 && priorAi.length >= 2) {
+          const category_id = [...catIds][0];
+          const existingRule = await sb(
+            env,
+            `category_rules?keyword=eq.${encodeURIComponent(merchant)}`
+          );
+          if (existingRule.length) {
+            await sb(env, `category_rules?id=eq.${existingRule[0].id}`, {
+              method: "PATCH",
+              body: { category_id },
+            });
+          } else {
+            await sb(env, "category_rules", {
+              method: "POST",
+              body: { keyword: merchant, category_id },
+            });
+          }
+        }
+      }
     }
 
     // Always retry if the batch was full - either there's genuinely more
