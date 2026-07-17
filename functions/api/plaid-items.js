@@ -7,7 +7,7 @@ export async function onRequestGet({ env }) {
     env,
     "plaid_items?select=id,institution_name,created_at&order=created_at.asc"
   );
-  const accounts = await sb(env, "accounts?select=id,plaid_item_id,name,mask");
+  const accounts = await sb(env, "accounts?select=id,plaid_item_id,name,mask,sync_disabled");
   const txns = await sb(env, "transactions?select=account_id");
 
   const accountsByItem = {};
@@ -26,7 +26,7 @@ export async function onRequestGet({ env }) {
       id: it.id,
       institution_name: it.institution_name,
       created_at: it.created_at,
-      accounts: accs.map((a) => ({ name: a.name, mask: a.mask })),
+      accounts: accs.map((a) => ({ name: a.name, mask: a.mask, sync_disabled: a.sync_disabled })),
       txn_count,
     };
   });
