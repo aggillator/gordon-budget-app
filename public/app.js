@@ -647,7 +647,7 @@ async function loadConnectedAccounts() {
   list.innerHTML = items
     .map((it) => {
       const accountsStr = it.accounts
-        .map((a) => `${a.name}${a.mask ? ` (...${a.mask})` : ""}`)
+        .map((a) => `${a.name}${a.mask ? ` (...${a.mask})` : ""}${a.sync_disabled ? ` <span class="sync-paused-badge">sync paused</span>` : ""}`)
         .join(", ");
       return `
     <div class="connected-item">
